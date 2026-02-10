@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Outfit Generator - Sample</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 24px 20px;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 24px;
+            font-size: 1.6rem;
+        }
+        .fit-slides {
+            position: relative;
+            min-width: 280px;
+        }
+        .clothing-row {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+            max-width: 280px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 14px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            padding: 0;
+        }
+        .clothing-row.hidden {
+            display: none;
+        }
+        .item-card {
+            width: 100%;
+            text-align: center;
+            transition: background 0.2s;
+        }
+        .item-card:hover {
+            background: #fafafa;
+        }
+        .item-card img {
+            width: 100%;
+            height: 180px;
+            object-fit: contain;
+            object-position: center;
+            display: block;
+            background: #fff;
+        }
+        .item-info {
+            padding: 8px 12px;
+            min-height: 32px;
+        }
+        .item-name {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #666;
+            margin: 0;
+            display: inline;
+        }
+        .item-price {
+            font-size: 0.85rem;
+            color: #999;
+            font-weight: 500;
+            margin: 0;
+            display: inline;
+        }
+        .item-price::before {
+            content: " · ";
+        }
+        .fit-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            margin: 0 auto;
+            max-width: 420px;
+        }
+        .arrow-btn {
+            width: 44px;
+            height: 44px;
+            border: none;
+            background: white;
+            border-radius: 50%;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            cursor: pointer;
+            font-size: 22px;
+            color: #333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .arrow-btn:hover {
+            background: #333;
+            color: white;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <h1>Outfit Generator</h1>
+    <div class="fit-container">
+        <button class="arrow-btn" onclick="prevFit()" aria-label="Previous fit">←</button>
+        <div class="fit-slides">
+            <div class="clothing-row fit-slide" data-fit="0">
+                <div class="item-card">
+                    <img src="black tee.png" alt="Black Tee">
+                    <div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div>
+                </div>
+                <div class="item-card">
+                    <img src="blue jean-dragon.png" alt="Blue Jeans">
+                    <div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div>
+                </div>
+                <div class="item-card">
+                    <img src="Nike-Dunk.png" alt="Nike Dunk">
+                    <div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div>
+                </div>
+            </div>
+            <div class="clothing-row fit-slide hidden" data-fit="1">
+                <div class="item-card">
+                    <img src="black tee.png" alt="Black Tee">
+                    <div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div>
+                </div>
+                <div class="item-card">
+                    <img src="blue jean-dragon.png" alt="Blue Jeans">
+                    <div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div>
+                </div>
+                <div class="item-card">
+                    <img src="Nike-Dunk.png" alt="Nike Dunk">
+                    <div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div>
+                </div>
+            </div>
+            <div class="clothing-row fit-slide hidden" data-fit="2">
+                <div class="item-card">
+                    <img src="black tee.png" alt="Black Tee">
+                    <div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div>
+                </div>
+                <div class="item-card">
+                    <img src="blue jean-dragon.png" alt="Blue Jeans">
+                    <div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div>
+                </div>
+                <div class="item-card">
+                    <img src="Nike-Dunk.png" alt="Nike Dunk">
+                    <div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div>
+                </div>
+            </div>
+        </div>
+        <button class="arrow-btn" onclick="nextFit()" aria-label="Next fit">→</button>
+    </div>
+    <script>
+        let currentFit = 0;
+        const totalFits = 3;
+        function showFit(n) {
+            currentFit = ((n % totalFits) + totalFits) % totalFits;
+            document.querySelectorAll('.fit-slide').forEach((slide, i) => {
+                slide.classList.toggle('hidden', i !== currentFit);
+            });
+        }
+        function prevFit() { showFit(currentFit - 1); }
+        function nextFit() { showFit(currentFit + 1); }
+    </script>
+</body>
+</html>
