@@ -3,171 +3,712 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Outfit Generator - Sample</title>
+    <title>Outfit Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        * {
-            box-sizing: border-box;
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg: #0a0a0a;
+            --surface: #111;
+            --border: #1e1e1e;
+            --text: #f0f0f0;
+            --muted: #555;
+            --accent: #fff;
         }
+
+        html { scroll-behavior: smooth; }
+
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f5f5f5;
-            margin: 0;
-            padding: 24px 20px;
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
         }
-        h1 {
-            text-align: center;
+
+        /* ── PAGE LOAD COVER ── */
+        #loader {
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.6s ease, visibility 0.6s ease;
+        }
+        #loader.hidden { opacity: 0; visibility: hidden; }
+        .loader-text {
+            font-family: 'Anton', sans-serif;
+            font-size: clamp(2rem, 6vw, 4rem);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #fff;
+            animation: loaderPulse 1s ease-in-out infinite alternate;
+        }
+        @keyframes loaderPulse {
+            from { opacity: 0.3; }
+            to   { opacity: 1; }
+        }
+
+        /* ── SCROLL REVEAL ── */
+        [data-reveal] {
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.7s ease, transform 0.7s ease;
+        }
+        [data-reveal].is-inview {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        [data-reveal][data-delay="1"] { transition-delay: 0.1s; }
+        [data-reveal][data-delay="2"] { transition-delay: 0.2s; }
+        [data-reveal][data-delay="3"] { transition-delay: 0.3s; }
+        [data-reveal][data-delay="4"] { transition-delay: 0.4s; }
+        [data-reveal][data-delay="5"] { transition-delay: 0.5s; }
+        [data-reveal][data-delay="6"] { transition-delay: 0.6s; }
+
+        /* ── NAV ── */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: rgba(10,10,10,0.88);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-bottom: 1px solid #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 32px;
+            height: 58px;
+        }
+        .nav-logo {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.1rem;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: #fff;
+        }
+        .nav-tabs { display: flex; gap: 4px; }
+        .nav-tab {
+            background: none;
+            border: none;
+            color: #555;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 7px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: color 0.2s, background 0.2s;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .nav-tab:hover { color: #fff; background: #1a1a1a; }
+        .nav-tab.active { color: #fff; background: #1f1f1f; }
+
+        /* ── PAGES ── */
+        .page { display: none; }
+        .page.active { display: block; }
+
+        /* ════════════════════════════
+           MARQUEE
+        ════════════════════════════ */
+        .marquee-wrap {
+            overflow: hidden;
+            border-top: 1px solid #1a1a1a;
+            border-bottom: 1px solid #1a1a1a;
+            background: #0d0d0d;
+            padding: 10px 0;
+        }
+        .marquee-track {
+            display: flex;
+            gap: 0;
+            width: max-content;
+            animation: marquee 28s linear infinite;
+        }
+        .marquee-track:hover { animation-play-state: paused; }
+        .marquee-item {
+            font-family: 'Anton', sans-serif;
+            font-size: 0.75rem;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
             color: #333;
-            margin-bottom: 24px;
-            font-size: 1.6rem;
+            padding: 0 32px;
+            white-space: nowrap;
         }
-        .fit-slides {
-            position: relative;
-            min-width: 280px;
+        .marquee-item.hot { color: #888; }
+        .marquee-sep {
+            color: #222;
+            font-size: 0.6rem;
+            align-self: center;
         }
-        .clothing-row {
+        @keyframes marquee {
+            from { transform: translateX(0); }
+            to   { transform: translateX(-50%); }
+        }
+
+        /* ════════════════════════════
+           TAB 1 — HOME
+        ════════════════════════════ */
+        .hero {
+            min-height: calc(100vh - 58px);
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 0;
-            max-width: 280px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 14px;
-            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
-            overflow: hidden;
-            padding: 0;
-        }
-        .clothing-row.hidden {
-            display: none;
-        }
-        .item-card {
-            width: 100%;
+            justify-content: center;
             text-align: center;
-            transition: background 0.2s;
+            padding: 80px 24px 60px;
+            position: relative;
         }
-        .item-card:hover {
-            background: #fafafa;
+        .hero::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse 70% 55% at 50% 45%, rgba(255,255,255,0.035) 0%, transparent 65%);
+            pointer-events: none;
         }
-        .item-card img {
-            width: 100%;
-            height: 180px;
-            object-fit: contain;
-            object-position: center;
-            display: block;
+        /* word-by-word reveal */
+        .hero-title {
+            font-family: 'Anton', sans-serif;
+            font-size: clamp(3rem, 9vw, 7.5rem);
+            line-height: 1.0;
+            letter-spacing: -0.01em;
+            text-transform: uppercase;
+            color: #fff;
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .hero-word {
+            display: inline-block;
+            opacity: 0;
+            transform: translateY(60px);
+            transition: opacity 0.6s ease, transform 0.6s ease;
+            margin-right: 0.22em;
+        }
+        .hero-word.revealed {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .hero-word.dim { color: #333; }
+        .hero-sub {
+            font-size: 1rem;
+            color: #444;
+            max-width: 420px;
+            line-height: 1.7;
+            margin-bottom: 44px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease 0.8s, transform 0.6s ease 0.8s;
+        }
+        .hero-sub.revealed { opacity: 1; transform: translateY(0); }
+        .hero-cta {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
             background: #fff;
-        }
-        .item-info {
-            padding: 8px 12px;
-            min-height: 32px;
-        }
-        .item-name {
+            color: #000;
+            border: none;
+            font-family: 'Inter', sans-serif;
             font-size: 0.85rem;
-            font-weight: 500;
-            color: #666;
-            margin: 0;
-            display: inline;
+            font-weight: 700;
+            padding: 16px 40px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease 1s, transform 0.6s ease 1s, background 0.2s, box-shadow 0.2s;
         }
-        .item-price {
-            font-size: 0.85rem;
-            color: #999;
-            font-weight: 500;
-            margin: 0;
-            display: inline;
+        .hero-cta.revealed { opacity: 1; transform: translateY(0); }
+        .hero-cta:hover {
+            background: #e8e8e8;
+            box-shadow: 0 16px 40px rgba(255,255,255,0.1);
         }
-        .item-price::before {
-            content: " · ";
+        .hero-cta .arrow { transition: transform 0.2s; }
+        .hero-cta:hover .arrow { transform: translateX(5px); }
+
+        /* trending cards on home */
+        .trending-strip {
+            margin-top: 80px;
+            width: 100%;
+            max-width: 700px;
+        }
+        .trending-strip-label {
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: #333;
+            margin-bottom: 18px;
+        }
+        .trending-cards {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .trending-card {
+            background: #0f0f0f;
+            border: 1px solid #1e1e1e;
+            border-radius: 14px;
+            padding: 16px 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 180px;
+            transition: border-color 0.3s, transform 0.2s;
+        }
+        .trending-card:hover { transform: translateY(-3px); }
+        .trending-card.rank-1 { border-color: #d4af37; }
+        .trending-card.rank-2 { border-color: #666; }
+        .trending-card.rank-3 { border-color: #7a3b1e; }
+        .trending-medal { font-size: 1.5rem; }
+        .trending-info { display: flex; flex-direction: column; gap: 3px; }
+        .trending-lbl { font-size: 0.62rem; color: #444; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 600; }
+        .trending-name { font-family: 'Anton', sans-serif; font-size: 1rem; letter-spacing: 0.04em; text-transform: uppercase; color: #fff; }
+        .trending-updated { font-size: 0.65rem; color: #333; margin-top: 16px; text-align: center; }
+
+        /* ════════════════════════════
+           TAB 2 — GENERATOR
+        ════════════════════════════ */
+        .generator-page {
+            padding: 64px 24px 100px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .page-heading {
+            font-family: 'Anton', sans-serif;
+            font-size: clamp(2.2rem, 5vw, 4rem);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        .page-sub {
+            font-size: 0.88rem;
+            color: #444;
+            margin-bottom: 48px;
+            text-align: center;
+        }
+        .fit-counter {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #444;
+            margin-bottom: 20px;
         }
         .fit-container {
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 20px;
-            margin: 0 auto;
-            max-width: 420px;
+            gap: 24px;
         }
+        .fit-slides { min-width: 280px; }
+        .clothing-row {
+            display: flex;
+            flex-direction: column;
+            width: 280px;
+            background: #111;
+            border: 1px solid #1e1e1e;
+            border-radius: 18px;
+            overflow: hidden;
+            transition: box-shadow 0.3s;
+        }
+        .clothing-row:hover { box-shadow: 0 0 0 1px #2a2a2a, 0 20px 50px rgba(0,0,0,0.5); }
+        .clothing-row.hidden { display: none; }
+        .item-card {
+            width: 100%;
+            text-align: center;
+            border-bottom: 1px solid #161616;
+            transition: background 0.2s;
+        }
+        .item-card:last-child { border-bottom: none; }
+        .item-card:hover { background: #161616; }
+        .item-card img {
+            width: 100%;
+            height: 185px;
+            object-fit: contain;
+            background: #111;
+            display: block;
+        }
+        .item-info { padding: 10px 14px; }
+        .item-name { font-size: 0.84rem; font-weight: 600; color: #bbb; display: inline; }
+        .item-price { font-size: 0.84rem; color: #444; display: inline; }
+        .item-price::before { content: " · "; }
         .arrow-btn {
-            width: 44px;
-            height: 44px;
-            border: none;
-            background: white;
+            width: 48px;
+            height: 48px;
+            border: 1px solid #222;
+            background: #111;
             border-radius: 50%;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
             cursor: pointer;
-            font-size: 22px;
-            color: #333;
+            font-size: 18px;
+            color: #666;
             display: flex;
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
+            flex-shrink: 0;
         }
-        .arrow-btn:hover {
-            background: #333;
-            color: white;
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+        .arrow-btn:hover { background: #fff; color: #000; border-color: #fff; transform: scale(1.08); }
+
+        /* ════════════════════════════
+           TAB 3 — STYLES
+        ════════════════════════════ */
+        .styles-page {
+            padding: 64px 24px 100px;
+            max-width: 1120px;
+            margin: 0 auto;
         }
+        .styles-filter {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 36px;
+        }
+        .filter-btn {
+            background: #111;
+            border: 1px solid #1e1e1e;
+            color: #555;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.72rem;
+            font-weight: 700;
+            padding: 8px 18px;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .filter-btn:hover, .filter-btn.active {
+            background: #fff;
+            color: #000;
+            border-color: #fff;
+        }
+        .styles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 14px;
+        }
+        .style-card {
+            background: #0f0f0f;
+            border: 1px solid #1a1a1a;
+            border-radius: 16px;
+            padding: 22px 20px;
+            transition: border-color 0.2s, transform 0.3s, box-shadow 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+        .style-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 50% 0%, rgba(255,255,255,0.03) 0%, transparent 60%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+        }
+        .style-card:hover {
+            border-color: #2a2a2a;
+            transform: translateY(-4px);
+            box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+        }
+        .style-card:hover::before { opacity: 1; }
+        .style-card.trending-now { border-color: #d4af37; }
+        .trending-badge {
+            display: none;
+            position: absolute;
+            top: 14px;
+            right: 14px;
+            background: #d4af37;
+            color: #000;
+            font-size: 0.58rem;
+            font-weight: 800;
+            padding: 3px 8px;
+            border-radius: 50px;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+        .style-card.trending-now .trending-badge { display: block; }
+        .style-emoji { font-size: 1.5rem; margin-bottom: 10px; }
+        .style-name { font-family: 'Anton', sans-serif; font-size: 1.05rem; letter-spacing: 0.04em; text-transform: uppercase; color: #fff; margin-bottom: 8px; }
+        .style-desc { font-size: 0.8rem; color: #4a4a4a; line-height: 1.65; margin-bottom: 14px; }
+        .style-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+        .style-tag { background: #161616; border: 1px solid #242424; color: #555; font-size: 0.68rem; padding: 3px 10px; border-radius: 50px; }
+
     </style>
 </head>
 <body>
-    <h1>Outfit Generator</h1>
-    <div class="fit-container">
-        <button class="arrow-btn" onclick="prevFit()" aria-label="Previous fit">←</button>
-        <div class="fit-slides">
-            <div class="clothing-row fit-slide" data-fit="0">
-                <div class="item-card">
-                    <img src="black tee.png" alt="Black Tee">
-                    <div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div>
+
+    <!-- LOADER -->
+    <div id="loader"><span class="loader-text">Outfit Generator</span></div>
+
+    <!-- NAV -->
+    <nav>
+        <span class="nav-logo">Outfit Generator</span>
+        <div class="nav-tabs">
+            <button class="nav-tab active" onclick="showPage('home', this)">Home</button>
+            <button class="nav-tab" onclick="showPage('generator', this)">Generator</button>
+            <button class="nav-tab" onclick="showPage('styles', this)">Styles</button>
+        </div>
+    </nav>
+
+    <!-- MARQUEE -->
+    <div class="marquee-wrap" id="marqueeWrap">
+        <div class="marquee-track" id="marqueeTrack">
+            <!-- filled by JS -->
+        </div>
+    </div>
+
+    <!-- ═══ PAGE: HOME ═══ -->
+    <div class="page active" id="page-home">
+        <section class="hero">
+            <h1 class="hero-title" id="heroTitle"></h1>
+            <p class="hero-sub" id="heroSub">Discover your next fit. Built from real-time fashion trends across 26 top style publications.</p>
+            <button class="hero-cta" id="heroCta" onclick="showPage('generator', document.querySelectorAll('.nav-tab')[1])">
+                Generate My Fit <span class="arrow">→</span>
+            </button>
+
+            <div class="trending-strip" data-reveal data-delay="5">
+                <p class="trending-strip-label">Trending Right Now</p>
+                <div class="trending-cards">
+                    <div class="trending-card rank-1"><span class="trending-medal">🥇</span><div class="trending-info"><span class="trending-lbl">Top Style</span><span class="trending-name" id="trend1">—</span></div></div>
+                    <div class="trending-card rank-2"><span class="trending-medal">🥈</span><div class="trending-info"><span class="trending-lbl">Rising</span><span class="trending-name" id="trend2">—</span></div></div>
+                    <div class="trending-card rank-3"><span class="trending-medal">🥉</span><div class="trending-info"><span class="trending-lbl">Hot</span><span class="trending-name" id="trend3">—</span></div></div>
                 </div>
-                <div class="item-card">
-                    <img src="blue jean-dragon.png" alt="Blue Jeans">
-                    <div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div>
-                </div>
-                <div class="item-card">
-                    <img src="Nike-Dunk.png" alt="Nike Dunk">
-                    <div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div>
-                </div>
+                <p class="trending-updated" id="homeUpdated"></p>
             </div>
-            <div class="clothing-row fit-slide hidden" data-fit="1">
-                <div class="item-card">
-                    <img src="black tee.png" alt="Black Tee">
-                    <div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div>
+        </section>
+    </div>
+
+    <!-- ═══ PAGE: GENERATOR ═══ -->
+    <div class="page" id="page-generator">
+        <div class="generator-page">
+            <h2 class="page-heading" data-reveal>Outfit Generator</h2>
+            <p class="page-sub" data-reveal data-delay="1">Swipe through fits — find your next look.</p>
+            <p class="fit-counter" id="fitCounter" data-reveal data-delay="2">Fit 1 of 3</p>
+            <div class="fit-container" data-reveal data-delay="3">
+                <button class="arrow-btn" onclick="prevFit()">←</button>
+                <div class="fit-slides">
+                    <div class="clothing-row fit-slide" data-fit="0">
+                        <div class="item-card"><img src="pics/black tee.png" alt="Black Tee"><div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div></div>
+                        <div class="item-card"><img src="pics/blue jean-dragon.png" alt="Blue Jeans"><div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div></div>
+                        <div class="item-card"><img src="pics/Nike-Dunk.png" alt="Nike Dunk"><div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div></div>
+                    </div>
+                    <div class="clothing-row fit-slide hidden" data-fit="1">
+                        <div class="item-card"><img src="pics/black tee.png" alt="Black Tee"><div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div></div>
+                        <div class="item-card"><img src="pics/blue jean-dragon.png" alt="Blue Jeans"><div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div></div>
+                        <div class="item-card"><img src="pics/Nike-Dunk.png" alt="Nike Dunk"><div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div></div>
+                    </div>
+                    <div class="clothing-row fit-slide hidden" data-fit="2">
+                        <div class="item-card"><img src="pics/black tee.png" alt="Black Tee"><div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div></div>
+                        <div class="item-card"><img src="pics/blue jean-dragon.png" alt="Blue Jeans"><div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div></div>
+                        <div class="item-card"><img src="pics/Nike-Dunk.png" alt="Nike Dunk"><div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div></div>
+                    </div>
                 </div>
-                <div class="item-card">
-                    <img src="blue jean-dragon.png" alt="Blue Jeans">
-                    <div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div>
-                </div>
-                <div class="item-card">
-                    <img src="Nike-Dunk.png" alt="Nike Dunk">
-                    <div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div>
-                </div>
-            </div>
-            <div class="clothing-row fit-slide hidden" data-fit="2">
-                <div class="item-card">
-                    <img src="black tee.png" alt="Black Tee">
-                    <div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div>
-                </div>
-                <div class="item-card">
-                    <img src="blue jean-dragon.png" alt="Blue Jeans">
-                    <div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div>
-                </div>
-                <div class="item-card">
-                    <img src="Nike-Dunk.png" alt="Nike Dunk">
-                    <div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div>
-                </div>
+                <button class="arrow-btn" onclick="nextFit()">→</button>
             </div>
         </div>
-        <button class="arrow-btn" onclick="nextFit()" aria-label="Next fit">→</button>
     </div>
+
+    <!-- ═══ PAGE: STYLES ═══ -->
+    <div class="page" id="page-styles">
+        <div class="styles-page">
+            <h2 class="page-heading" data-reveal>Style Guide</h2>
+            <p class="page-sub" data-reveal data-delay="1">Every aesthetic explained — find yours.</p>
+            <div class="styles-filter" data-reveal data-delay="2">
+                <button class="filter-btn active" onclick="filterStyles('all', this)">All</button>
+                <button class="filter-btn" onclick="filterStyles('core', this)">Core</button>
+                <button class="filter-btn" onclick="filterStyles('trending', this)">Trending</button>
+                <button class="filter-btn" onclick="filterStyles('classic', this)">Classic</button>
+                <button class="filter-btn" onclick="filterStyles('sustainable', this)">Sustainable</button>
+            </div>
+            <div class="styles-grid" id="stylesGrid"></div>
+        </div>
+    </div>
+
+    <script src="trending_styles_data.js"></script>
     <script>
+        // ── LOADER ──
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                document.getElementById('loader').classList.add('hidden');
+                animateHero();
+            }, 700);
+        });
+
+        // ── HERO WORD REVEAL ──
+        const heroWords = [
+            { text: 'Welcome', dim: false },
+            { text: 'To',      dim: true  },
+            { text: 'Outfit',  dim: false },
+            { text: 'Generator', dim: false },
+        ];
+        function animateHero() {
+            const title = document.getElementById('heroTitle');
+            heroWords.forEach((w, i) => {
+                const span = document.createElement('span');
+                span.className = 'hero-word' + (w.dim ? ' dim' : '');
+                span.textContent = w.text;
+                title.appendChild(span);
+                setTimeout(() => span.classList.add('revealed'), 200 + i * 150);
+            });
+            setTimeout(() => {
+                document.getElementById('heroSub').classList.add('revealed');
+                document.getElementById('heroCta').classList.add('revealed');
+            }, 900);
+        }
+
+        // ── SCROLL REVEAL (IntersectionObserver — same pattern as phamilypharma) ──
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(e => {
+                if (e.isIntersecting) {
+                    e.target.classList.add('is-inview');
+                    revealObserver.unobserve(e.target);
+                }
+            });
+        }, { threshold: 0.12 });
+
+        function observeRevealElements() {
+            document.querySelectorAll('[data-reveal]').forEach(el => {
+                el.classList.remove('is-inview');
+                revealObserver.observe(el);
+            });
+        }
+        observeRevealElements();
+
+        // ── TAB SWITCHING ──
+        function showPage(id, btn) {
+            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('page-' + id).classList.add('active');
+            btn.classList.add('active');
+            // re-observe reveal elements on new page
+            setTimeout(observeRevealElements, 50);
+        }
+
+        // ── OUTFIT CAROUSEL ──
         let currentFit = 0;
         const totalFits = 3;
         function showFit(n) {
             currentFit = ((n % totalFits) + totalFits) % totalFits;
-            document.querySelectorAll('.fit-slide').forEach((slide, i) => {
-                slide.classList.toggle('hidden', i !== currentFit);
-            });
+            document.querySelectorAll('.fit-slide').forEach((s, i) => s.classList.toggle('hidden', i !== currentFit));
+            document.getElementById('fitCounter').textContent = 'Fit ' + (currentFit + 1) + ' of ' + totalFits;
         }
         function prevFit() { showFit(currentFit - 1); }
         function nextFit() { showFit(currentFit + 1); }
+
+        // ── STYLES DATA ──
+        // img: Unsplash photo ID — format: https://images.unsplash.com/photo-{id}?w=400&h=260&fit=crop
+        const stylesData = [
+            { name: 'Streetwear',      emoji: '🧢', cat: 'core',        img: '1556906781-9a412961a28e', desc: 'Urban, casual, and bold. Rooted in skate, hip-hop, and youth culture.', tags: ['oversized', 'graphics', 'sneakers', 'hoodies'] },
+            { name: 'Y2K',             emoji: '✨', cat: 'trending',     img: '1617038260-b012f834a1cf', desc: 'Early 2000s revival. Low-rise, velour tracksuits, and lots of glitter.', tags: ['low rise', 'velour', 'sparkle', 'crop tops'] },
+            { name: 'Dark Academia',   emoji: '📚', cat: 'core',         img: '1509631179647-0177331693ae', desc: 'Scholarly and moody. Tweed, plaid, oxfords, and earth tones.', tags: ['plaid', 'tweed', 'oxfords', 'earth tones'] },
+            { name: 'Cottagecore',     emoji: '🌿', cat: 'core',         img: '1558618666-fcd25c85cd64', desc: 'Romantic and rustic. Flowy dresses, floral prints, and pastoral vibes.', tags: ['floral', 'linen', 'flowy', 'vintage'] },
+            { name: 'Clean Girl',      emoji: '🤍', cat: 'trending',     img: '1517841905240-472988babdf9', desc: 'Polished minimalism. Slicked buns, gold hoops, and neutral tones.', tags: ['neutrals', 'minimal', 'gold jewelry', 'sleek'] },
+            { name: 'Gorpcore',        emoji: '🏔️', cat: 'core',        img: '1483921616820-9e0a7cf8ac16', desc: 'Outdoorsy and technical. Fleece, trail runners, and functional gear as fashion.', tags: ['fleece', 'cargo', 'trail runners', 'technical'] },
+            { name: 'Minimalist',      emoji: '◻️', cat: 'classic',     img: '1490481651871-ab68de25d43d', desc: 'Less is more. Clean silhouettes, neutral palette, quality over quantity.', tags: ['neutrals', 'clean lines', 'monochrome', 'quality'] },
+            { name: 'Grunge',          emoji: '🖤', cat: 'core',         img: '1536609266-6aec4f5ef4af', desc: '90s rebellion. Ripped jeans, band tees, flannel, and chunky boots.', tags: ['ripped', 'flannel', 'band tees', 'chunky boots'] },
+            { name: 'Preppy',          emoji: '🎽', cat: 'classic',      img: '1519085360753-af0119f7cbe7', desc: 'Ivy League inspired. Polo shirts, chinos, loafers, and pastel colors.', tags: ['polo', 'chinos', 'loafers', 'pastels'] },
+            { name: 'Athleisure',      emoji: '🏃', cat: 'classic',      img: '1538805060514-fd37b3f3c47e', desc: 'Gym-to-street crossover. Leggings, sneakers, and hoodies as everyday outfits.', tags: ['leggings', 'sneakers', 'hoodies', 'sports bra'] },
+            { name: 'Quiet Luxury',    emoji: '🏛️', cat: 'trending',    img: '1539109136081-3b5e3e7f3f7c', desc: 'Understated and expensive. Muted tones, high-quality fabrics, no logos.', tags: ['cashmere', 'neutral', 'tailored', 'no logos'] },
+            { name: 'Old Money',       emoji: '💼', cat: 'trending',     img: '1507003211169-0a1dd7228f2d', desc: 'Inherited wealth aesthetic. Blazers, loafers, and classic silhouettes.', tags: ['blazers', 'loafers', 'classic', 'refined'] },
+            { name: 'Boho',            emoji: '🌸', cat: 'classic',      img: '1525507119428-b937e7064da2', desc: 'Free-spirited and eclectic. Maxi dresses, fringe, layered jewelry.', tags: ['maxi', 'fringe', 'layered', 'earthy'] },
+            { name: 'Maximalist',      emoji: '🎭', cat: 'core',         img: '1523381294911-8d3cead13475', desc: 'More is more. Clashing prints, bold colors, statement pieces everywhere.', tags: ['bold prints', 'layered', 'colorful', 'statement'] },
+            { name: 'Barbiecore',      emoji: '🩷', cat: 'trending',     img: '1583743814966-8d4a0fbd5567', desc: 'Unapologetically pink and feminine. Hot pink everything, playful excess.', tags: ['hot pink', 'feminine', 'fun', 'bold'] },
+            { name: 'Balletcore',      emoji: '🩰', cat: 'trending',     img: '1518611012144-a86ef998b6c9', desc: 'Graceful and feminine. Ballet flats, wrap tops, pastel pink, ribbon details.', tags: ['ballet flats', 'pastel', 'wrap tops', 'ribbon'] },
+            { name: 'Mob Wife',        emoji: '🐆', cat: 'trending',     img: '1515886657613-9f3515b0c78f', desc: 'Dramatic and luxe. Fur coats, animal print, bold jewelry, opulence.', tags: ['fur', 'animal print', 'bold jewelry', 'dramatic'] },
+            { name: 'Tomato Girl',     emoji: '🍅', cat: 'trending',     img: '1534528741775-53994a69daeb', desc: 'Italian summer vibes. Linen, stripes, cherry reds, Mediterranean energy.', tags: ['linen', 'stripes', 'red', 'Mediterranean'] },
+            { name: 'Coquette',        emoji: '🎀', cat: 'trending',     img: '1521119989659-a27a8a61f1ce', desc: 'Feminine and flirtatious. Bows, lace, soft pinks, hyper-girly aesthetic.', tags: ['bows', 'lace', 'soft pink', 'feminine'] },
+            { name: 'Office Siren',    emoji: '👔', cat: 'trending',     img: '1594938298603-a6256f0e3e55', desc: 'Professional but seductive. Tailored blazers, pencil skirts, power dressing.', tags: ['blazer', 'tailored', 'heels', 'polished'] },
+            { name: 'Blokecore',       emoji: '⚽', cat: 'trending',     img: '1552674605-db5fecabfe68', desc: 'Football kits as fashion. Soccer jerseys, shorts, trainers — Euro sport energy.', tags: ['jersey', 'soccer', 'trainers', 'casual'] },
+            { name: 'Indie Sleaze',    emoji: '🎸', cat: 'core',         img: '1503342217505-b0a15ec3261c', desc: 'Late 2000s downtown cool. Disco pants, messy hair, effortless grit.', tags: ['disco pants', 'vintage', 'messy', 'downtown'] },
+            { name: 'Casual Chic',     emoji: '✌️', cat: 'classic',     img: '1490481651871-ab68de25d43d', desc: 'Relaxed but put-together. Elevated basics and simple silhouettes.', tags: ['basics', 'relaxed', 'elevated', 'simple'] },
+            { name: 'Business Casual', emoji: '💻', cat: 'classic',      img: '1441986300917-3a7e0c5e5f3b', desc: 'Professional without the full suit. Slacks, blouses, loafers.', tags: ['slacks', 'blouses', 'loafers', 'smart'] },
+            { name: 'Monochrome',      emoji: '⬛', cat: 'classic',      img: '1516762689617-e1cffcef479d', desc: 'Head-to-toe in one color. Clean, impactful, and versatile.', tags: ['one color', 'clean', 'bold', 'sleek'] },
+            { name: 'Normcore',        emoji: '🧍', cat: 'classic',      img: '1549298916-b41d501d3772', desc: 'Intentionally average. Plain tees, jeans, white sneakers.', tags: ['plain tee', 'jeans', 'white sneakers', 'simple'] },
+            { name: 'French Girl',     emoji: '🥐', cat: 'classic',      img: '1483985442358-8d6c4e2d3b3c', desc: 'Effortlessly chic. Striped tops, tailored trousers, scarves.', tags: ['stripes', 'tailored', 'scarf', 'effortless'] },
+            { name: 'Scandinavian',    emoji: '❄️', cat: 'classic',     img: '1519751138082-666f678f9176', desc: 'Nordic minimalism. Functional, clean, understated, natural materials.', tags: ['minimal', 'natural fabrics', 'neutral', 'functional'] },
+            { name: 'Sustainable',     emoji: '♻️', cat: 'sustainable',  img: '1489987707849-4cfca95b5a83', desc: 'Ethical and eco-conscious. Organic fabrics, fair trade, mindful consumption.', tags: ['organic', 'ethical', 'eco', 'conscious'] },
+            { name: 'Slow Fashion',    emoji: '🌱', cat: 'sustainable',  img: '1558618666-fcd25c85cd64', desc: 'Fewer, better pieces. Anti-fast-fashion, focused on longevity.', tags: ['quality', 'longevity', 'investment', 'craftsmanship'] },
+            { name: 'Vintage',         emoji: '🕰️', cat: 'sustainable', img: '1509631179647-0177331693ae', desc: 'Pre-loved fashion from past decades. Unique, sustainable, higher quality.', tags: ['thrifted', 'pre-loved', 'unique', 'decades'] },
+            { name: 'Upcycled',        emoji: '🔄', cat: 'sustainable',  img: '1523381294911-8d3cead13475', desc: 'Transformed and remade. New life through creative alterations and DIY redesigns.', tags: ['DIY', 'remade', 'creative', 'transformed'] },
+        ];
+
+        let trendingStyleName = '';
+
+        function renderStyles(filter) {
+            const grid = document.getElementById('stylesGrid');
+            const list = filter === 'all' ? stylesData : stylesData.filter(s => s.cat === filter);
+            grid.innerHTML = list.map((s, i) => {
+                const isTrending = trendingStyleName && s.name.toLowerCase() === trendingStyleName.toLowerCase();
+                const delay = (i % 4) + 1;
+                return `<div class="style-card ${isTrending ? 'trending-now' : ''}" data-reveal data-delay="${delay}">
+                    <span class="trending-badge">🔥 Trending</span>
+                    <div class="style-emoji">${s.emoji}</div>
+                    <div class="style-name">${s.name}</div>
+                    <div class="style-desc">${s.desc}</div>
+                    <div class="style-tags">${s.tags.map(t => `<span class="style-tag">${t}</span>`).join('')}</div>
+                </div>`;
+            }).join('');
+            setTimeout(observeRevealElements, 30);
+        }
+
+        function filterStyles(filter, btn) {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            renderStyles(filter);
+        }
+
+        // ── MARQUEE (filled by JS so we can duplicate for seamless loop) ──
+        function buildMarquee(styles) {
+            const items = styles.length
+                ? styles.slice(0, 10).map(s => s.style)
+                : ['streetwear','y2k','dark academia','quiet luxury','gorpcore','cottagecore','clean girl','barbiecore','balletcore','old money'];
+            const track = document.getElementById('marqueeTrack');
+            // duplicate for seamless infinite scroll
+            const html = [...items, ...items].map((name, i) =>
+                `<span class="marquee-item${i < items.length ? ' hot' : ''}">${name.toUpperCase()}</span><span class="marquee-sep">✦</span>`
+            ).join('');
+            track.innerHTML = html;
+        }
+
+        // ── TRENDING DATA ──
+        function loadTrending(data) {
+            const top = (data.trending_styles || []).slice(0, 3);
+            ['trend1','trend2','trend3'].forEach((id, i) => {
+                const el = document.getElementById(id);
+                if (el && top[i]) el.textContent = top[i].style.toUpperCase();
+            });
+            if (top[0]) trendingStyleName = top[0].style;
+            const upd = document.getElementById('homeUpdated');
+            if (upd && data.date) upd.textContent = 'Updated ' + data.date;
+            buildMarquee(data.trending_styles || []);
+            renderStyles('all');
+        }
+
+        // ── INIT ──
+        (function init() {
+            buildMarquee([]);
+            renderStyles('all');
+            if (window.TRENDING_STYLES && window.TRENDING_STYLES.trending_styles) {
+                loadTrending(window.TRENDING_STYLES);
+                return;
+            }
+            fetch('trending_styles.json')
+                .then(r => r.ok ? r.json() : Promise.reject())
+                .then(loadTrending)
+                .catch(() => {});
+        })();
     </script>
 </body>
 </html>
