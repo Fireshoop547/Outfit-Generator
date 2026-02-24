@@ -3,6 +3,13 @@ import json
 from datetime import datetime
 import time
 
+# pytrends is optional — script still works without it using RSS only
+try:
+    from pytrends.request import TrendReq
+    PYTRENDS_AVAILABLE = True
+except ImportError:
+    PYTRENDS_AVAILABLE = False
+
 feedparser.USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 style_keywords = [
@@ -27,7 +34,7 @@ style_keywords = [
     "barbiecore",
     "balletcore",
     "dopamine dressing",
-    
+
     # Trending styles
     "mob wife",
     "tomato girl",
@@ -42,7 +49,7 @@ style_keywords = [
     "uptown girl",
     "model off duty",
     "brooklyn style",
-    
+
     # Classic styles
     "casual chic",
     "business casual",
@@ -55,7 +62,7 @@ style_keywords = [
     "scandinavian style",
     "french girl",
     "parisian chic",
-    
+
     # Specific trends
     "oversized",
     "baggy",
@@ -69,7 +76,7 @@ style_keywords = [
     "ballet flats",
     "mary janes",
     "kitten heels",
-    
+
     # Fashion movements
     "sustainable fashion",
     "slow fashion",
@@ -78,7 +85,7 @@ style_keywords = [
     "upcycled",
     "gender neutral",
     "androgynous",
-    
+
     # Color trends
     "dopamine colors",
     "earth tones",
@@ -86,13 +93,13 @@ style_keywords = [
     "pastels",
     "neon",
     "all white",
-    
+
     # Seasonal
     "spring fashion",
     "summer style",
     "fall fashion",
     "winter style",
-    
+
     # Fabric/texture trends
     "leather",
     "denim",
@@ -102,7 +109,7 @@ style_keywords = [
     "corduroy",
     "mesh",
     "sheer",
-    
+
     # Pattern trends
     "animal print",
     "leopard print",
@@ -148,111 +155,183 @@ rss_feeds = [
     {"name": "Google News - Aesthetic Fashion", "url": "https://news.google.com/rss/search?q=aesthetic+fashion&hl=en-US"},
 ]
 
-# Initialize counter
-style_counts = {}
-for style in style_keywords:
-    style_counts[style] = 0
+# ─────────────────────────────────────────────
+# STEP 1: RSS FEED SCANNING
+# ─────────────────────────────────────────────
 
+style_counts = {style: 0 for style in style_keywords}
 total_articles = 0
 successful_feeds = 0
 
-# Parse all feeds
 print("=" * 70)
-print("FASHION TREND PARSER")
+print("FASHION TREND PARSER — RSS + GOOGLE TRENDS")
 print("=" * 70)
-print("\nParsing RSS feeds from working sources...\n")
+print("\n📰 STEP 1: Parsing RSS feeds...\n")
 
 for feed_info in rss_feeds:
-    print(f"📰 Parsing {feed_info['name']}...")
-    
+    print(f"  Parsing {feed_info['name']}...")
     try:
         feed = feedparser.parse(feed_info['url'])
-        
+
         if not hasattr(feed, 'entries') or len(feed.entries) == 0:
             print(f"   ✗ No articles found")
             continue
-        
-        print(f"   ✓ Found {len(feed.entries)} articles")
+
+        print(f"   ✓ {len(feed.entries)} articles")
         total_articles += len(feed.entries)
         successful_feeds += 1
-        
-        # Loop through articles
+
         articles_with_matches = 0
         for entry in feed.entries:
-            # Get title
-            title = ""
-            if hasattr(entry, 'title'):
-                title = entry.title.lower()
-            
-            # Get description
+            title = entry.title.lower() if hasattr(entry, 'title') else ""
             description = ""
             if hasattr(entry, 'summary'):
                 description = entry.summary.lower()
             elif hasattr(entry, 'description'):
                 description = entry.description.lower()
-            
-            # Combine title and description
+
             full_text = title + " " + description
-            
-            # Track if this article mentioned any styles
             found_in_article = False
-            
-            # Search for style keywords
+
             for style in style_keywords:
                 if style in full_text:
                     style_counts[style] += 1
                     if not found_in_article:
                         articles_with_matches += 1
                         found_in_article = True
-        
-        print(f"   → {articles_with_matches} articles mentioned style keywords")
-        
-        # Small delay to be polite to servers
+
+        print(f"   → {articles_with_matches} articles matched style keywords")
         time.sleep(0.5)
-    
+
     except Exception as e:
         print(f"   ✗ Error: {str(e)[:60]}")
 
-# Sort styles by count (highest first)
-sorted_styles = sorted(style_counts.items(), key=lambda x: x[1], reverse=True)
+# Normalize RSS scores to 0–100
+max_rss = max(style_counts.values()) if max(style_counts.values()) > 0 else 1
+rss_normalized = {style: round((count / max_rss) * 100) for style, count in style_counts.items()}
 
-# Print results
+# ─────────────────────────────────────────────
+# STEP 2: GOOGLE TRENDS SCANNING
+# ─────────────────────────────────────────────
+
+trends_scores = {style: 0 for style in style_keywords}
+
 print("\n" + "=" * 70)
-print("📊 RESULTS")
+print("📈 STEP 2: Fetching Google Trends data...")
 print("=" * 70)
-print(f"✓ Successful feeds: {successful_feeds}/{len(rss_feeds)}")
-print(f"✓ Total articles analyzed: {total_articles}")
+
+if not PYTRENDS_AVAILABLE:
+    print("\n  ⚠️  pytrends not installed. Run: pip install pytrends")
+    print("  Skipping Google Trends — using RSS data only.\n")
+else:
+    try:
+        pytrends = TrendReq(hl='en-US', tz=300, timeout=(10, 25))
+
+        # pytrends max 5 keywords per request — batch them up
+        BATCH_SIZE = 5
+        batches = [style_keywords[i:i+BATCH_SIZE] for i in range(0, len(style_keywords), BATCH_SIZE)]
+        successful_batches = 0
+
+        print(f"\n  Querying {len(batches)} batches of up to {BATCH_SIZE} keywords (past 7 days)...\n")
+
+        for i, batch in enumerate(batches):
+            try:
+                pytrends.build_payload(batch, cat=0, timeframe='now 7-d', geo='US', gprop='')
+                interest_df = pytrends.interest_over_time()
+
+                if interest_df.empty:
+                    print(f"  Batch {i+1}/{len(batches)}: no data returned")
+                    time.sleep(1)
+                    continue
+
+                # Average interest across the time window for each keyword
+                for keyword in batch:
+                    if keyword in interest_df.columns:
+                        avg_score = int(interest_df[keyword].mean())
+                        trends_scores[keyword] = avg_score
+
+                hits = [k for k in batch if trends_scores[k] > 0]
+                print(f"  Batch {i+1}/{len(batches)}: ✓ got data for {len(hits)}/{len(batch)} keywords")
+                successful_batches += 1
+
+                # Be polite — Google will rate-limit if you hammer it
+                time.sleep(2)
+
+            except Exception as e:
+                print(f"  Batch {i+1}/{len(batches)}: ✗ {str(e)[:60]}")
+                time.sleep(3)
+
+        print(f"\n  ✓ Google Trends: {successful_batches}/{len(batches)} batches succeeded")
+
+    except Exception as e:
+        print(f"\n  ✗ Google Trends failed entirely: {str(e)[:80]}")
+        print("  Falling back to RSS-only scoring.\n")
+
+# ─────────────────────────────────────────────
+# STEP 3: COMBINE SCORES
+# ─────────────────────────────────────────────
+# Weights: 60% RSS (editorial coverage) + 40% Google Trends (search interest)
+# If Trends data is all zeros (failed), fall back to 100% RSS
+
+trends_total = sum(trends_scores.values())
+RSS_WEIGHT = 0.6 if trends_total > 0 else 1.0
+TRENDS_WEIGHT = 0.4 if trends_total > 0 else 0.0
+
+combined_scores = {}
+for style in style_keywords:
+    combined_scores[style] = round(
+        (rss_normalized[style] * RSS_WEIGHT) +
+        (trends_scores[style] * TRENDS_WEIGHT)
+    )
+
+sorted_styles = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+
+# ─────────────────────────────────────────────
+# STEP 4: PRINT RESULTS
+# ─────────────────────────────────────────────
+
+print("\n" + "=" * 70)
+print("📊 FINAL RESULTS  (RSS {:.0f}% + Google Trends {:.0f}%)".format(RSS_WEIGHT*100, TRENDS_WEIGHT*100))
+print("=" * 70)
+print(f"  RSS  → {successful_feeds}/{len(rss_feeds)} feeds, {total_articles} articles")
+if PYTRENDS_AVAILABLE and trends_total > 0:
+    print(f"  Trends → {sum(1 for v in trends_scores.values() if v > 0)} keywords with search data")
 print()
 
-if total_articles > 0:
-    print("🔥 TRENDING STYLES (from blog mentions):")
-    print("-" * 70)
-    
-    found_any = False
-    rank = 1
-    for style, count in sorted_styles:
-        if count > 0:
-            emoji = "🔥" if rank <= 3 else "📈"
-            print(f"  {emoji} #{rank:2d}  {style.title():<25} → {count:3d} mentions")
-            found_any = True
-            rank += 1
-    
-    if not found_any:
-        print("  ⚠️  No style keywords found in articles.")
+print("🔥 TRENDING STYLES:")
+print("-" * 70)
+rank = 1
+for style, score in sorted_styles:
+    if score > 0:
+        rss_part  = rss_normalized[style]
+        trend_part = trends_scores[style]
+        emoji = "🔥" if rank <= 3 else "📈"
+        print(f"  {emoji} #{rank:2d}  {style.title():<25} score={score:3d}  (rss={rss_part}, trends={trend_part})")
+        rank += 1
+        if rank > 20:
+            break
 
-else:
-    print("⚠️  No articles were found from any feed!")
+# ─────────────────────────────────────────────
+# STEP 5: SAVE OUTPUT
+# ─────────────────────────────────────────────
 
-# Save results to JSON file
 results = {
-    "source": "fashion_blog_rss",
+    "source": "rss_and_google_trends",
     "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     "total_articles_analyzed": total_articles,
     "successful_feeds": successful_feeds,
     "total_feeds_attempted": len(rss_feeds),
+    "google_trends_available": PYTRENDS_AVAILABLE and trends_total > 0,
+    "weights": {"rss": RSS_WEIGHT, "google_trends": TRENDS_WEIGHT},
     "trending_styles": [
-        {"style": style, "mentions": count, "rank": i+1} 
-        for i, (style, count) in enumerate(sorted_styles) if count > 0
+        {
+            "style": style,
+            "score": score,
+            "rss_score": rss_normalized[style],
+            "trends_score": trends_scores[style],
+            "rank": i + 1
+        }
+        for i, (style, score) in enumerate(sorted_styles) if score > 0
     ]
 }
 
@@ -260,12 +339,10 @@ output_file = 'trending_styles.json'
 with open(output_file, 'w') as f:
     json.dump(results, f, indent=2)
 
-# Also write a JS file so the leaderboard can load without a server (works on file://)
 js_file = 'trending_styles_data.js'
-js_content = 'window.TRENDING_STYLES = ' + json.dumps(results) + ';\n'
 with open(js_file, 'w') as f:
-    f.write(js_content)
+    f.write('window.TRENDING_STYLES = ' + json.dumps(results) + ';\n')
 
 print("\n" + "=" * 70)
-print(f"💾 Results saved to '{output_file}' and '{js_file}'")
+print(f"💾 Saved to '{output_file}' and '{js_file}'")
 print("=" * 70)
