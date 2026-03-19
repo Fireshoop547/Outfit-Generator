@@ -210,9 +210,9 @@ for feed_info in rss_feeds:
 max_rss = max(style_counts.values()) if max(style_counts.values()) > 0 else 1
 rss_normalized = {style: round((count / max_rss) * 100) for style, count in style_counts.items()}
 
-# ─────────────────────────────────────────────
+
 # STEP 2: GOOGLE TRENDS SCANNING
-# ─────────────────────────────────────────────
+
 
 trends_scores = {style: 0 for style in style_keywords}
 
@@ -221,7 +221,7 @@ print("📈 STEP 2: Fetching Google Trends data...")
 print("=" * 70)
 
 if not PYTRENDS_AVAILABLE:
-    print("\n  ⚠️  pytrends not installed. Run: pip install pytrends")
+    print("\n    pytrends not installed. Run: pip install pytrends")
     print("  Skipping Google Trends — using RSS data only.\n")
 else:
     try:
@@ -267,11 +267,8 @@ else:
         print(f"\n  ✗ Google Trends failed entirely: {str(e)[:80]}")
         print("  Falling back to RSS-only scoring.\n")
 
-# ─────────────────────────────────────────────
-# STEP 3: COMBINE SCORES
-# ─────────────────────────────────────────────
-# Weights: 60% RSS (editorial coverage) + 40% Google Trends (search interest)
-# If Trends data is all zeros (failed), fall back to 100% RSS
+
+
 
 trends_total = sum(trends_scores.values())
 RSS_WEIGHT = 0.6 if trends_total > 0 else 1.0
@@ -286,9 +283,7 @@ for style in style_keywords:
 
 sorted_styles = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
 
-# ─────────────────────────────────────────────
-# STEP 4: PRINT RESULTS
-# ─────────────────────────────────────────────
+
 
 print("\n" + "=" * 70)
 print("📊 FINAL RESULTS  (RSS {:.0f}% + Google Trends {:.0f}%)".format(RSS_WEIGHT*100, TRENDS_WEIGHT*100))
@@ -311,9 +306,7 @@ for style, score in sorted_styles:
         if rank > 20:
             break
 
-# ─────────────────────────────────────────────
-# STEP 5: SAVE OUTPUT
-# ─────────────────────────────────────────────
+
 
 results = {
     "source": "rss_and_google_trends",

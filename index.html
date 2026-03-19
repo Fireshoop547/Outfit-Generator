@@ -298,6 +298,14 @@
             margin-bottom: 48px;
             text-align: center;
         }
+        .fit-style-label {
+            font-family: 'Anton', sans-serif;
+            font-size: 1.1rem;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: #fff;
+            margin-bottom: 4px;
+        }
         .fit-counter {
             font-size: 0.72rem;
             font-weight: 700;
@@ -330,6 +338,9 @@
             text-align: center;
             border-bottom: 1px solid #161616;
             transition: background 0.2s;
+            text-decoration: none;
+            display: block;
+            color: inherit;
         }
         .item-card:last-child { border-bottom: none; }
         .item-card:hover { background: #161616; }
@@ -340,10 +351,31 @@
             background: #111;
             display: block;
         }
-        .item-info { padding: 10px 14px; }
-        .item-name { font-size: 0.84rem; font-weight: 600; color: #bbb; display: inline; }
-        .item-price { font-size: 0.84rem; color: #444; display: inline; }
-        .item-price::before { content: " · "; }
+        .item-card .img-placeholder {
+            width: 100%;
+            height: 185px;
+            background: #111;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+        }
+        .item-info { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+        .item-info-left { display: flex; flex-direction: column; gap: 2px; }
+        .item-slot-label { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #333; }
+        .item-name { font-size: 0.82rem; font-weight: 600; color: #bbb; }
+        .item-price { font-size: 0.82rem; color: #555; }
+        .store-badge {
+            font-size: 0.6rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: #000;
+            background: #fff;
+            padding: 3px 8px;
+            border-radius: 50px;
+            flex-shrink: 0;
+        }
         .arrow-btn {
             width: 48px;
             height: 48px;
@@ -360,6 +392,23 @@
             flex-shrink: 0;
         }
         .arrow-btn:hover { background: #fff; color: #000; border-color: #fff; transform: scale(1.08); }
+        /* no-products fallback */
+        .gen-empty {
+            text-align: center;
+            padding: 60px 24px;
+            color: #333;
+        }
+        .gen-empty code {
+            background: #161616;
+            border: 1px solid #222;
+            border-radius: 8px;
+            padding: 14px 20px;
+            display: inline-block;
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 16px;
+            font-family: monospace;
+        }
 
         /* ════════════════════════════
            TAB 3 — STYLES
@@ -495,28 +544,7 @@
         <div class="generator-page">
             <h2 class="page-heading" data-reveal>Outfit Generator</h2>
             <p class="page-sub" data-reveal data-delay="1">Swipe through fits — find your next look.</p>
-            <p class="fit-counter" id="fitCounter" data-reveal data-delay="2">Fit 1 of 3</p>
-            <div class="fit-container" data-reveal data-delay="3">
-                <button class="arrow-btn" onclick="prevFit()">←</button>
-                <div class="fit-slides">
-                    <div class="clothing-row fit-slide" data-fit="0">
-                        <div class="item-card"><img src="pics/black tee.png" alt="Black Tee"><div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div></div>
-                        <div class="item-card"><img src="pics/blue jean-dragon.png" alt="Blue Jeans"><div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div></div>
-                        <div class="item-card"><img src="pics/Nike-Dunk.png" alt="Nike Dunk"><div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div></div>
-                    </div>
-                    <div class="clothing-row fit-slide hidden" data-fit="1">
-                        <div class="item-card"><img src="pics/black tee.png" alt="Black Tee"><div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div></div>
-                        <div class="item-card"><img src="pics/blue jean-dragon.png" alt="Blue Jeans"><div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div></div>
-                        <div class="item-card"><img src="pics/Nike-Dunk.png" alt="Nike Dunk"><div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div></div>
-                    </div>
-                    <div class="clothing-row fit-slide hidden" data-fit="2">
-                        <div class="item-card"><img src="pics/black tee.png" alt="Black Tee"><div class="item-info"><span class="item-name">Black Tee</span><span class="item-price">$24.99</span></div></div>
-                        <div class="item-card"><img src="pics/blue jean-dragon.png" alt="Blue Jeans"><div class="item-info"><span class="item-name">Blue Jeans</span><span class="item-price">$59.99</span></div></div>
-                        <div class="item-card"><img src="pics/Nike-Dunk.png" alt="Nike Dunk"><div class="item-info"><span class="item-name">Nike Dunk</span><span class="item-price">$120.00</span></div></div>
-                    </div>
-                </div>
-                <button class="arrow-btn" onclick="nextFit()">→</button>
-            </div>
+            <div id="genContent" data-reveal data-delay="2"></div>
         </div>
     </div>
 
@@ -537,6 +565,7 @@
     </div>
 
     <script src="trending_styles_data.js"></script>
+    <script src="products_data.js" onerror="window.OUTFIT_PRODUCTS=null"></script>
     <script>
         // ── LOADER ──
         window.addEventListener('load', () => {
@@ -597,15 +626,97 @@
         }
 
         // ── OUTFIT CAROUSEL ──
+        const SLOT_EMOJI = { top: '👕', bottom: '👖', shoes: '👟' };
+        const SLOT_LABEL = { top: 'Top', bottom: 'Bottom', shoes: 'Shoes' };
+
         let currentFit = 0;
-        const totalFits = 3;
+        let genFits = [];
+
+        function buildItemCard(item) {
+            if (!item) return '';
+            const imgHtml = item.image
+                ? `<img src="${item.image}" alt="${item.name}" loading="lazy" onerror="this.parentElement.innerHTML='<div class=\\'img-placeholder\\'>${SLOT_EMOJI[item.slot] || '👔'}</div>'">`
+                : `<div class="img-placeholder">${SLOT_EMOJI[item.slot] || '👔'}</div>`;
+            const priceHtml = item.price ? `<span class="item-price">${item.price}</span>` : '';
+            const badge = item.store ? `<span class="store-badge">${item.store}</span>` : '';
+            const tag = item.url ? 'a' : 'div';
+            const href = item.url ? `href="${item.url}" target="_blank" rel="noopener"` : '';
+            return `<${tag} class="item-card" ${href}>
+                ${imgHtml}
+                <div class="item-info">
+                    <div class="item-info-left">
+                        <span class="item-slot-label">${SLOT_LABEL[item.slot] || item.slot}</span>
+                        <span class="item-name">${item.name}</span>
+                        ${priceHtml}
+                    </div>
+                    ${badge}
+                </div>
+            </${tag}>`;
+        }
+
+        function buildStaticFits() {
+            // Fallback fits using local pics when no products_data.js exists
+            return [
+                {
+                    style: 'streetwear',
+                    items: [
+                        { slot: 'top',    name: 'Black Tee',   price: '$24.99', image: 'pics/black tee.png',       url: '', store: '' },
+                        { slot: 'bottom', name: 'Blue Jeans',  price: '$59.99', image: 'pics/blue jean-dragon.png', url: '', store: '' },
+                        { slot: 'shoes',  name: 'Nike Dunk',   price: '$120.00',image: 'pics/Nike-Dunk.png',       url: '', store: '' },
+                    ],
+                },
+            ];
+        }
+
+        function renderGenerator(fits) {
+            genFits = fits;
+            const total = fits.length;
+            if (total === 0) {
+                document.getElementById('genContent').innerHTML = `
+                    <div class="gen-empty">
+                        <p style="color:#444;font-size:.9rem">No fits generated yet.</p>
+                        <code>python fetch_products.py</code>
+                        <p style="margin-top:12px;font-size:.78rem;color:#333">Run the script with your Apify key to pull real products.</p>
+                    </div>`;
+                return;
+            }
+
+            const slidesHtml = fits.map((fit, i) =>
+                `<div class="clothing-row fit-slide${i !== 0 ? ' hidden' : ''}" data-fit="${i}">
+                    ${fit.items.filter(Boolean).map(buildItemCard).join('')}
+                </div>`
+            ).join('');
+
+            document.getElementById('genContent').innerHTML = `
+                <p class="fit-style-label" id="fitStyleLabel">${fits[0].style.toUpperCase()}</p>
+                <p class="fit-counter" id="fitCounter">Fit 1 of ${total}</p>
+                <div class="fit-container">
+                    <button class="arrow-btn" onclick="prevFit()">←</button>
+                    <div class="fit-slides">${slidesHtml}</div>
+                    <button class="arrow-btn" onclick="nextFit()">→</button>
+                </div>`;
+        }
+
         function showFit(n) {
-            currentFit = ((n % totalFits) + totalFits) % totalFits;
+            const total = genFits.length;
+            if (!total) return;
+            currentFit = ((n % total) + total) % total;
             document.querySelectorAll('.fit-slide').forEach((s, i) => s.classList.toggle('hidden', i !== currentFit));
-            document.getElementById('fitCounter').textContent = 'Fit ' + (currentFit + 1) + ' of ' + totalFits;
+            document.getElementById('fitCounter').textContent = 'Fit ' + (currentFit + 1) + ' of ' + total;
+            const lbl = document.getElementById('fitStyleLabel');
+            if (lbl && genFits[currentFit]) lbl.textContent = genFits[currentFit].style.toUpperCase();
         }
         function prevFit() { showFit(currentFit - 1); }
         function nextFit() { showFit(currentFit + 1); }
+
+        // Load fits — prefer Apify data, fall back to static
+        (function initGenerator() {
+            if (window.OUTFIT_PRODUCTS && window.OUTFIT_PRODUCTS.fits && window.OUTFIT_PRODUCTS.fits.length) {
+                renderGenerator(window.OUTFIT_PRODUCTS.fits);
+            } else {
+                renderGenerator(buildStaticFits());
+            }
+        })();
 
         // ── STYLES DATA ──
         // img: Unsplash photo ID — format: https://images.unsplash.com/photo-{id}?w=400&h=260&fit=crop
