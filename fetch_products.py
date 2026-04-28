@@ -1,21 +1,18 @@
 #!/usr/bin/env python3
 """
-Outfit Generator — Product Fetcher (ScraperAPI edition)
-=========================================================
-Reads trending_styles.json → searches H&M, ASOS, Zara
+Outfit Generator — Product Fetcher (RapidAPI H&M edition)
+==========================================================
+Reads trending_styles.json → searches H&M via RapidAPI
 → writes products_data.js for the website.
 
 Setup:
   pip install requests
-  set SCRAPERAPI_KEY=your_key   (Windows CMD)
-  $env:SCRAPERAPI_KEY="your_key" (PowerShell)
 
 Run:
   python fetch_products.py
 """
 
-import os, sys, re, json, time, random, requests
-from urllib.parse import quote_plus
+import sys, json, requests, itertools, os
 from datetime import datetime
 
 if sys.platform == "win32":
@@ -24,289 +21,477 @@ if sys.platform == "win32":
 # ─────────────────────────────────────────────────────
 #  CONFIG
 # ─────────────────────────────────────────────────────
-SCRAPERAPI_KEY  = os.environ.get("SCRAPERAPI_KEY", "PUT_YOUR_KEY_HERE")
-SCRAPER_URL     = "https://api.scraperapi.com/"
-TOP_STYLES      = 10   # how many trending styles to build fits for
-
-# ─────────────────────────────────────────────────────
-#  SCRAPERAPI WRAPPER
-# ─────────────────────────────────────────────────────
-
-def fetch(url, render_js=False, retries=2):
-    """Fetch a URL through ScraperAPI. render_js=True for JS-heavy pages (costs more credits)."""
-    params = {"api_key": SCRAPERAPI_KEY, "url": url}
-    if render_js:
-        params["render"] = "true"
-    for attempt in range(retries + 1):
-        try:
-            r = requests.get(SCRAPER_URL, params=params, timeout=60)
-            if r.status_code == 200:
-                return r
-            print(f"        HTTP {r.status_code} on attempt {attempt+1}")
-        except Exception as e:
-            print(f"        Error attempt {attempt+1}: {str(e)[:60]}")
-        if attempt < retries:
-            time.sleep(3)
-    return None
+RAPIDAPI_KEY   = os.environ.get("RAPIDAPI_KEY")
+if not RAPIDAPI_KEY:
+    print("ERROR: RAPIDAPI_KEY environment variable not set.")
+    print("See README.md for setup instructions.")
+    sys.exit(1)
+HM_HOST        = "h-m-hennes-mauritz.p.rapidapi.com"
+HM_HEADERS     = {"X-RapidAPI-Key": RAPIDAPI_KEY, "X-RapidAPI-Host": HM_HOST}
+CANDIDATES     = 15   # how many H&M products to fetch per slot query
+FITS_PER_COMBO = 4    # distinct fits to build per style+gender combo
 
 
 # ─────────────────────────────────────────────────────
-#  STORE SCRAPERS
+#  H&M SEARCH
 # ─────────────────────────────────────────────────────
 
-def search_hm(query, n=3):
-    """Search H&M via their internal JSON API."""
-    url = (
-        f"https://www2.hm.com/en_us/search-results.html"
-        f"?q={quote_plus(query)}&sort=RELEVANCE&image-size=small"
-        f"&image=model&offset=0&pagesize={n}&format=json"
-    )
-    r = fetch(url)
-    if not r:
-        return []
+def search_hm(query, n=15):
     try:
+        r = requests.get(
+            f"https://{HM_HOST}/search",
+            headers=HM_HEADERS,
+            params={"query": query, "country": "us", "lang": "en",
+                    "pageSize": str(n), "pageNumber": "0"},
+            timeout=20,
+        )
+        if r.status_code != 200:
+            print(f"  HTTP {r.status_code}")
+            return []
         data = r.json()
-        products = data.get("products") or data.get("results") or []
-        # Also try nested path
-        if not products:
-            products = data.get("plpList", {}).get("products", [])
+        products = (data.get("data") or {}).get("products") or []
+        if not products and isinstance(data.get("data"), list):
+            products = data["data"]
         results = []
         for p in products[:n]:
-            name  = p.get("name") or p.get("title") or ""
-            price = p.get("price", {})
-            if isinstance(price, dict):
-                price = price.get("value") or price.get("price") or ""
-            images = p.get("images") or p.get("swatches") or []
-            image  = ""
-            if images:
-                first = images[0]
-                if isinstance(first, dict):
-                    image = first.get("url") or first.get("src") or ""
-                elif isinstance(first, str):
-                    image = first
-            pid = p.get("code") or p.get("id") or ""
-            url_p = f"https://www2.hm.com/en_us/productpage.{pid}.html" if pid else ""
+            name      = p.get("productName") or p.get("name") or ""
+            price     = ""
+            prices    = p.get("prices") or []
+            if prices:
+                price = prices[0].get("formattedPrice") or str(prices[0].get("price") or "")
+            images    = p.get("images") or []
+            image     = images[0].get("url") if images else (p.get("productImage") or "")
+            url       = p.get("url") or ""
+            color_name = p.get("colorName") or ""
             if name:
-                results.append({"name": name, "price": str(price), "image": image, "url": url_p})
-        return results
-    except Exception:
-        # Fallback: scrape the HTML page and extract __NEXT_DATA__
-        return search_hm_html(query, n)
-
-
-def search_hm_html(query, n=3):
-    """Fallback: scrape H&M search page HTML and extract embedded product JSON."""
-    url = f"https://www2.hm.com/en_us/search-results.html?q={quote_plus(query)}"
-    r = fetch(url)
-    if not r:
-        return []
-    try:
-        html = r.text
-        match = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', html, re.DOTALL)
-        if not match:
-            return []
-        data   = json.loads(match.group(1))
-        # Navigate possible paths
-        page   = data.get("props", {}).get("pageProps", {})
-        prods  = (page.get("searchData", {}).get("products")
-               or page.get("plpData", {}).get("products")
-               or page.get("products")
-               or [])
-        results = []
-        for p in prods[:n]:
-            name   = p.get("name") or p.get("title") or ""
-            price  = p.get("price", {})
-            if isinstance(price, dict):
-                price = price.get("value") or ""
-            imgs   = p.get("images") or []
-            image  = imgs[0].get("url", "") if imgs and isinstance(imgs[0], dict) else (imgs[0] if imgs else "")
-            pid    = p.get("code") or p.get("id") or ""
-            purl   = f"https://www2.hm.com/en_us/productpage.{pid}.html" if pid else ""
-            if name:
-                results.append({"name": name, "price": str(price), "image": image, "url": purl})
+                results.append({
+                    "name": name, "colorName": color_name,
+                    "price": price, "image": image,
+                    "url": url, "store": "H&M", "storeColor": "#e50010",
+                })
         return results
     except Exception as e:
-        print(f"        H&M HTML parse error: {str(e)[:60]}")
+        print(f"  error: {str(e)[:80]}")
         return []
 
 
-_ASOS_BRANDS = {
-    'asos design': 'asos-design', 'jack & jones': 'jack-jones',
-    '& other stories': 'other-stories', '4th & reckless': '4th-reckless',
-    'new balance': 'new-balance', 'cheap monday': 'cheap-monday',
-    'public desire': 'public-desire', 'reclaimed vintage': 'reclaimed-vintage',
+# ─────────────────────────────────────────────────────
+#  IMPROVED COLOR MATCHING
+# ─────────────────────────────────────────────────────
+COLOR_DB = {
+    "black":    (0,   0,   8),   "white":    (0,   0,  96),
+    "grey":     (0,   0,  50),   "gray":     (0,   0,  50),
+    "charcoal": (0,   0,  22),   "silver":   (0,   0,  68),
+    "navy":     (225, 68, 18),   "blue":     (210, 72, 48),
+    "denim":    (212, 40, 45),   "cobalt":   (215, 80, 40),
+    "red":      (2,   78, 48),   "burgundy": (344, 58, 28),
+    "maroon":   (0,   58, 24),   "wine":     (348, 60, 26),
+    "pink":     (340, 65, 68),   "blush":    (352, 50, 80),
+    "rose":     (350, 60, 55),   "coral":    (14,  78, 63),
+    "orange":   (22,  78, 52),   "rust":     (14,  63, 42),
+    "yellow":   (52,  88, 58),   "gold":     (44,  68, 58),
+    "green":    (122, 45, 38),   "olive":    (72,  43, 33),
+    "sage":     (98,  22, 52),   "mint":     (154, 43, 68),
+    "teal":     (174, 52, 38),   "emerald":  (145, 55, 35),
+    "purple":   (268, 58, 48),   "lavender": (270, 48, 73),
+    "lilac":    (280, 42, 72),   "plum":     (300, 45, 30),
+    "brown":    (24,  43, 28),   "tan":      (33,  43, 53),
+    "camel":    (33,  52, 53),   "beige":    (40,  28, 78),
+    "cream":    (44,  28, 88),   "ecru":     (43,  25, 82),
+    "khaki":    (55,  28, 58),   "sand":     (38,  32, 72),
+    "stone":    (40,  18, 62),   "ivory":    (45,  30, 92),
+    "taupe":    (35,  15, 55),   "mocha":    (25,  30, 38),
 }
 
-def _asos_url(name, pid):
-    import re
-    slug = lambda s: re.sub(r'[\s]+', '-', re.sub(r'[^a-z0-9\s-]', '', s.lower()).strip())
-    nl = name.lower()
-    brand = next((v for k, v in sorted(_ASOS_BRANDS.items(), key=lambda x: -len(x[0])) if nl.startswith(k)), slug(name.split()[0]))
-    return f"https://www.asos.com/{brand}/{slug(name)}/prd/{pid}"
+def get_color(product):
+    for field in ["colorName", "name"]:
+        s = (product.get(field) or "").lower()
+        for key in sorted(COLOR_DB, key=len, reverse=True):
+            if key in s:
+                return COLOR_DB[key]
+    return None
+
+def is_neutral(hsl):
+    return hsl[1] < 20
+
+def hue_diff(h1, h2):
+    return min(abs(h1 - h2), 360 - abs(h1 - h2))
+
+def pair_score(c1, c2):
+    """
+    Improved color harmony scorer.
+    Considers: monochromatic, analogous, split-complementary,
+    complementary, triadic, lightness contrast for neutrals.
+    """
+    if c1 is None or c2 is None:
+        return 0.75  # unknown color → neutral assumption
+
+    n1, n2 = is_neutral(c1), is_neutral(c2)
+
+    # Both neutrals — good if lightness contrasts, risky if same
+    if n1 and n2:
+        l_diff = abs(c1[2] - c2[2])
+        if l_diff >= 30: return 1.00   # black + white, charcoal + cream etc.
+        if l_diff >= 15: return 0.90   # moderate contrast
+        return 0.72                    # same-ish neutrals (grey + grey) → a bit flat
+
+    # One neutral anchors the palette — almost always works
+    if n1 or n2:
+        return 0.97
+
+    # Both chromatic — evaluate hue relationship
+    diff = hue_diff(c1[0], c2[0])
+
+    # Lightness contrast bonus (dark + light chromatic = more visual interest)
+    l_contrast = abs(c1[2] - c2[2])
+    l_bonus = 0.04 if l_contrast > 25 else 0.0
+
+    # Saturation harmony bonus (matched saturation looks intentional)
+    s_diff = abs(c1[1] - c2[1])
+    s_bonus = 0.03 if s_diff < 20 else 0.0
+
+    if diff <= 15:
+        # Very close hues (near-monochromatic) — good only with l/s variation
+        if l_contrast > 20 or s_diff > 25: return 0.88 + l_bonus
+        return 0.68                    # too similar = muddy
+
+    if diff <= 40:  return 0.87 + l_bonus + s_bonus   # analogous
+    if diff <= 60:  return 0.80 + l_bonus              # wide analogous
+
+    if 150 <= diff <= 170: return 0.85 + l_bonus       # split-complementary low
+    if 170 <  diff <= 190: return 0.89 + l_bonus       # true complementary
+    if 190 <  diff <= 210: return 0.85 + l_bonus       # split-complementary high
+
+    if 110 <= diff <= 130: return 0.78 + l_bonus       # triadic
+    if  80 <= diff <= 110: return 0.55                 # intermediate — risky
+    return 0.38                                        # colour clash
+
+def score_combo(items):
+    """
+    Weighted pair scoring.
+    Top ↔ Bottom is the hero pairing (3×).
+    Shoes ↔ Top/Bottom is supporting (1.5×).
+    Outer ↔ everything is context (1×).
+    """
+    slot_of = {i: item.get("slot", "") for i, item in enumerate(items)}
+    colors  = [get_color(item) for item in items]
+    pairs   = list(itertools.combinations(range(len(items)), 2))
+    if not pairs:
+        return 0.75
+
+    total, weight_sum = 0.0, 0.0
+    for i, j in pairs:
+        s1, s2 = slot_of[i], slot_of[j]
+        c1, c2 = colors[i],  colors[j]
+        sc = pair_score(c1, c2)
+
+        if {s1, s2} == {"top", "bottom"}:       w = 3.0
+        elif "shoes" in {s1, s2}:                w = 1.5
+        elif "outer" in {s1, s2}:                w = 1.2
+        else:                                    w = 1.0
+
+        total      += sc * w
+        weight_sum += w
+
+    return total / weight_sum if weight_sum else 0.75
 
 
-def search_asos(query, n=3, gender="women"):
-    """Search ASOS via their keyword search API. gender = 'men' or 'women'."""
-    channel = "COM-Men" if gender == "men" else "COM-Default"
-    url = (
-        f"https://www.asos.com/api/product/search/v2/"
-        f"?q={quote_plus(query)}&limit={n}&store=US&lang=en-US"
-        f"&currency=USD&sizeSchema=US&offset=0&channel={channel}"
-    )
-    r = fetch(url)
-    if not r:
-        return []
-    try:
-        data     = r.json()
-        products = data.get("products") or []
-        results  = []
-        for p in products[:n]:
-            name   = p.get("name") or ""
-            price  = p.get("price", {})
-            if isinstance(price, dict):
-                price = price.get("current", {}).get("value") or price.get("value") or ""
-            imgs   = p.get("imageUrl") or ""
-            if imgs and not imgs.startswith("http"):
-                imgs = "https://" + imgs
-            if imgs and "?" not in imgs:
-                imgs += "?$n_320w$&wid=317&fit=constrain"
-            # Use the actual product URL slug from the API response
-            slug = p.get("url") or ""
-            if slug and not slug.startswith("http"):
-                purl = "https://www.asos.com/" + slug.split("#")[0]  # strip colourway hash
-            elif slug.startswith("http"):
-                purl = slug
-            else:
-                # Fallback: build URL from product name + ID
-                pid = str(p.get("id") or "")
-                purl = _asos_url(name, pid) if pid else ""
-            if name:
-                results.append({"name": name, "price": str(price), "image": imgs, "url": purl})
-        return results
-    except Exception as e:
-        print(f"        ASOS parse error: {str(e)[:60]}")
-        return []
+# ─────────────────────────────────────────────────────
+#  DIVERSE COMBO BUILDER
+#  Each successive fit removes used items so clothes don't repeat
+# ─────────────────────────────────────────────────────
 
+def build_diverse_combos(slot_candidates, n=4):
+    """
+    Build up to n combos where each combo uses different clothing items.
+    After each pick, remove used items from the pool.
+    """
+    slots = [s for s in ["outer", "top", "bottom", "shoes"] if s in slot_candidates]
+    # working copy — we'll drain this
+    pool = {s: list(slot_candidates[s]) for s in slots}
+    selected = []
 
-def search_zara(query, n=3):
-    """Search Zara via their internal REST API."""
-    # US store ID is 11719
-    url = (
-        f"https://www.zara.com/itxrest/3/catalog/store/11719/search"
-        f"?searchTerm={quote_plus(query)}&languageId=-1&type=product&quantity={n}"
-    )
-    r = fetch(url)
-    if not r:
-        return []
-    try:
-        data     = r.json()
-        products = data.get("product") or data.get("products") or data.get("productGroups", [{}])[0].get("elements", []) if isinstance(data.get("productGroups"), list) else []
-        results  = []
-        for p in products[:n]:
-            # Zara wraps in a "product" sub-object sometimes
-            if "detail" in p:
-                p = p["detail"]
-            name   = p.get("name") or p.get("title") or ""
-            price  = p.get("price") or p.get("displayPrice") or ""
-            # Price is often in cents
-            if isinstance(price, (int, float)) and price > 1000:
-                price = f"${price/100:.2f}"
-            imgs   = p.get("xmedia") or p.get("images") or []
-            image  = ""
-            if imgs and isinstance(imgs[0], dict):
-                path = imgs[0].get("path") or ""
-                name_i = imgs[0].get("name") or ""
-                if path and name_i:
-                    image = f"https://static.zara.net/photos//{path}/w/563/{name_i}.jpg"
-                else:
-                    image = imgs[0].get("url") or imgs[0].get("src") or ""
-            pid    = p.get("id") or p.get("productId") or ""
-            purl   = f"https://www.zara.com/us/en/{pid}.html" if pid else ""
-            if name:
-                results.append({"name": name, "price": str(price), "image": image, "url": purl})
-        return results
-    except Exception as e:
-        print(f"        Zara parse error: {str(e)[:60]}")
-        return []
+    for _ in range(n):
+        # need at least 1 candidate in every required slot
+        required = [s for s in slots if s != "outer"]
+        if not all(pool.get(s) for s in required):
+            break
 
+        # score all remaining combos
+        best_score, best_combo = -1, None
+        active = {s: pool[s] for s in slots if pool.get(s)}
+        for combo in itertools.product(*[active[s] for s in active]):
+            items = list(combo)
+            sc = score_combo(items)
+            if sc > best_score:
+                best_score = sc
+                best_combo = {list(active.keys())[i]: items[i]
+                               for i in range(len(items))}
 
-# Store registry: tried in order, uses first that returns results
-STORES = [
-    {"name": "ASOS",  "color": "#2d2d2d", "fn": search_asos},
-    {"name": "H&M",   "color": "#e50010", "fn": search_hm},
-    {"name": "Zara",  "color": "#1a1a1a", "fn": search_zara},
-]
+        if best_combo is None:
+            break
 
-GENDERS = ["men", "women"]
+        selected.append((best_score, best_combo))
+
+        # drain used items from pool
+        for s, item in best_combo.items():
+            pool[s] = [p for p in pool[s] if p.get("name") != item.get("name")]
+
+    return selected
 
 
 # ─────────────────────────────────────────────────────
 #  STYLE → SEARCH TERMS
+#  Multiple query variants per slot → more unique candidates
 # ─────────────────────────────────────────────────────
 STYLE_MAP = {
-    "streetwear":         {"top": "oversized graphic hoodie",    "bottom": "cargo pants",             "shoes": "chunky sneakers"},
-    "y2k":                {"top": "y2k crop top",                "bottom": "low rise flare jeans",    "shoes": "platform sneakers"},
-    "dark academia":      {"top": "plaid oversized blazer",      "bottom": "tailored trousers",       "shoes": "oxford shoes"},
-    "clean girl":         {"top": "ribbed tank top",             "bottom": "wide leg trousers",       "shoes": "white sneakers"},
-    "quiet luxury":       {"top": "cashmere crewneck sweater",   "bottom": "tailored straight trousers","shoes": "leather loafers"},
-    "old money":          {"top": "polo shirt",                  "bottom": "chino pants",             "shoes": "penny loafers"},
-    "cottagecore":        {"top": "floral puff sleeve blouse",   "bottom": "flowy midi skirt",        "shoes": "ballet flats"},
-    "grunge":             {"top": "oversized flannel shirt",     "bottom": "ripped skinny jeans",     "shoes": "chunky platform boots"},
-    "gorpcore":           {"top": "technical fleece jacket",     "bottom": "ripstop cargo pants",     "shoes": "trail running shoes"},
-    "minimalist":         {"top": "white fitted t-shirt",        "bottom": "straight leg jeans",      "shoes": "white leather sneakers"},
-    "preppy":             {"top": "polo shirt",                  "bottom": "chino shorts",            "shoes": "loafers"},
-    "athleisure":         {"top": "sports bra crop top",         "bottom": "high waist leggings",     "shoes": "running sneakers"},
-    "coquette":           {"top": "bow detail satin top",        "bottom": "mini skirt",              "shoes": "ballet flats"},
-    "office siren":       {"top": "tailored blazer",             "bottom": "pencil skirt",            "shoes": "pointed toe heels"},
-    "balletcore":         {"top": "wrap crop top",               "bottom": "flowy skirt",             "shoes": "satin ballet flats"},
-    "barbiecore":         {"top": "pink crop top",               "bottom": "pink mini skirt",         "shoes": "platform heels"},
-    "mob wife":           {"top": "faux fur coat",               "bottom": "animal print skirt",      "shoes": "heeled ankle boots"},
-    "tomato girl":        {"top": "linen striped top",           "bottom": "linen wide trousers",     "shoes": "strappy sandals"},
-    "indie sleaze":       {"top": "vintage band graphic tee",    "bottom": "disco flare pants",       "shoes": "ankle boots"},
-    "blokecore":          {"top": "soccer jersey",               "bottom": "track shorts",            "shoes": "retro trainers"},
-    "boho":               {"top": "crochet top",                 "bottom": "wide leg bohemian pants", "shoes": "platform sandals"},
-    "maximalist":         {"top": "printed statement blouse",    "bottom": "wide leg printed pants",  "shoes": "embellished heels"},
-    "coastal grandmother":{"top": "linen button up shirt",       "bottom": "linen wide trousers",     "shoes": "espadrilles"},
-    "dopamine dressing":  {"top": "bright color oversized shirt","bottom": "wide leg trousers",       "shoes": "colorful sneakers"},
-    "vanilla girl":       {"top": "white ribbed top",            "bottom": "cream straight jeans",    "shoes": "white sneakers"},
-    "downtown girl":      {"top": "black leather jacket",        "bottom": "straight jeans",          "shoes": "ankle boots"},
-    "regencycore":        {"top": "empire waist dress top",      "bottom": "flowy skirt",             "shoes": "mary jane heels"},
-    "normcore":           {"top": "basic crewneck sweatshirt",   "bottom": "straight jeans",          "shoes": "white sneakers"},
-    "casual chic":        {"top": "linen relaxed shirt",         "bottom": "straight jeans",          "shoes": "loafers"},
-    "business casual":    {"top": "fitted blazer",               "bottom": "tailored trousers",       "shoes": "loafers"},
-    "leather":            {"top": "leather jacket",              "bottom": "leather pants",           "shoes": "leather ankle boots"},
-    "denim":              {"top": "denim jacket",                "bottom": "straight jeans",          "shoes": "white sneakers"},
-    "linen":              {"top": "linen button up shirt",       "bottom": "linen wide trousers",     "shoes": "espadrilles"},
-    "silk":               {"top": "silk satin blouse",           "bottom": "satin slip skirt",        "shoes": "strappy heels"},
-    "velvet":             {"top": "velvet blazer",               "bottom": "velvet flare trousers",   "shoes": "velvet heeled mules"},
-    "animal print":       {"top": "animal print blouse",         "bottom": "black trousers",          "shoes": "ankle boots"},
-    "floral":             {"top": "floral blouse",               "bottom": "denim jeans",             "shoes": "white sneakers"},
-    "plaid":              {"top": "plaid blazer",                "bottom": "tailored trousers",       "shoes": "loafers"},
-    "all black":          {"top": "black oversized sweater",     "bottom": "black wide leg pants",    "shoes": "black boots"},
-    "all white":          {"top": "white oversized shirt",       "bottom": "white wide leg trousers", "shoes": "white sneakers"},
-    "neon":               {"top": "neon oversized tee",          "bottom": "black jeans",             "shoes": "white sneakers"},
-    "earth tones":        {"top": "rust brown oversized shirt",  "bottom": "camel trousers",          "shoes": "tan chunky boots"},
-    "neutrals":           {"top": "beige ribbed top",            "bottom": "cream wide trousers",     "shoes": "nude loafers"},
-    "pastels":            {"top": "pastel pink top",             "bottom": "pastel wide trousers",    "shoes": "white sneakers"},
-    "oversized":          {"top": "oversized sweater",           "bottom": "wide leg jeans",          "shoes": "chunky sneakers"},
-    "baggy":              {"top": "baggy graphic tee",           "bottom": "baggy wide jeans",        "shoes": "chunky sneakers"},
-    "wide leg":           {"top": "fitted crop top",             "bottom": "wide leg trousers",       "shoes": "platform boots"},
-    "high rise":          {"top": "tucked in shirt",             "bottom": "high rise wide leg jeans","shoes": "ankle boots"},
-    "low rise":           {"top": "fitted crop top",             "bottom": "low rise straight jeans", "shoes": "platform sneakers"},
-    "vintage":            {"top": "vintage oversized blazer",    "bottom": "high waist straight jeans","shoes": "platform loafers"},
-    "sustainable fashion":{"top": "organic cotton tee",          "bottom": "wide leg jeans",          "shoes": "canvas sneakers"},
-    "gender neutral":     {"top": "oversized button up shirt",   "bottom": "wide straight trousers",  "shoes": "chunky sneakers"},
-    "spring fashion":     {"top": "floral printed shirt",        "bottom": "wide leg trousers",       "shoes": "strappy sandals"},
-    "summer style":       {"top": "linen crop top",              "bottom": "linen shorts",            "shoes": "platform sandals"},
-    "fall fashion":       {"top": "oversized knit sweater",      "bottom": "straight jeans",          "shoes": "ankle boots"},
-    "winter style":       {"top": "wool coat",                   "bottom": "straight trousers",       "shoes": "knee high boots"},
+    # ── 4-piece (outer + top + bottom + shoes) ──────────────────────
+    "streetwear": {
+        "outer":  ["bomber jacket", "track jacket", "windbreaker"],
+        "top":    ["graphic tee oversized", "printed hoodie", "logo sweatshirt"],
+        "bottom": ["cargo pants", "baggy jeans", "joggers"],
+        "shoes":  ["chunky sneakers", "high top sneakers", "basketball shoes"],
+    },
+    "dark academia": {
+        "outer":  ["plaid blazer", "tweed coat", "corduroy blazer"],
+        "top":    ["turtleneck knit", "cable knit sweater", "fitted button shirt"],
+        "bottom": ["tailored trousers", "plaid trousers", "straight chinos"],
+        "shoes":  ["oxford shoes", "chelsea boots", "loafers"],
+    },
+    "old money": {
+        "outer":  ["wool blazer", "single breasted blazer", "cashmere coat"],
+        "top":    ["polo shirt", "oxford shirt", "linen shirt"],
+        "bottom": ["chino pants", "tailored trousers", "straight trousers"],
+        "shoes":  ["penny loafers", "tasseled loafers", "leather loafers"],
+    },
+    "grunge": {
+        "outer":  ["flannel shirt oversized", "denim jacket oversized", "plaid overshirt"],
+        "top":    ["band tee", "graphic tee black", "oversized tee faded"],
+        "bottom": ["ripped skinny jeans", "ripped black jeans", "wide leg jeans"],
+        "shoes":  ["platform boots", "chunky boots", "high top boots"],
+    },
+    "preppy": {
+        "outer":  ["navy blazer", "varsity jacket", "quilted jacket"],
+        "top":    ["polo shirt", "striped rugby shirt", "oxford button shirt"],
+        "bottom": ["chino shorts", "slim chinos", "pleated trousers"],
+        "shoes":  ["loafers", "boat shoes", "white tennis shoes"],
+    },
+    "gorpcore": {
+        "outer":  ["waterproof jacket shell", "puffer jacket", "fleece zip jacket"],
+        "top":    ["fleece pullover", "thermal long sleeve", "performance t-shirt"],
+        "bottom": ["cargo hiking pants", "ripstop pants", "track pants"],
+        "shoes":  ["trail running shoes", "hiking boots", "technical sneakers"],
+    },
+    "business casual": {
+        "outer":  ["tailored blazer", "single breasted suit jacket", "structured blazer"],
+        "top":    ["button up oxford shirt", "dress shirt", "linen shirt"],
+        "bottom": ["tailored trousers slim", "suit trousers", "chino trousers"],
+        "shoes":  ["loafers", "oxford leather shoes", "derby shoes"],
+    },
+    "quiet luxury": {
+        "outer":  ["cashmere coat", "long wool coat", "camel coat"],
+        "top":    ["ribbed turtleneck", "merino sweater", "cashmere jumper"],
+        "bottom": ["tailored straight trousers", "wide leg trousers", "straight leg pants"],
+        "shoes":  ["leather loafers", "pointed flats", "suede loafers"],
+    },
+    "minimalist": {
+        "outer":  ["light trench coat", "simple blazer", "linen blazer"],
+        "top":    ["white fitted t-shirt", "ribbed tank top", "simple long sleeve"],
+        "bottom": ["straight leg jeans", "straight leg trousers", "slim chinos"],
+        "shoes":  ["white leather sneakers", "minimalist sneakers", "clean sneakers"],
+    },
+    "mob wife": {
+        "outer":  ["faux fur coat", "fur trim coat", "oversized fur jacket"],
+        "top":    ["satin blouse", "corset top", "bodysuit"],
+        "bottom": ["leather skirt", "animal print skirt", "wide leg leather pants"],
+        "shoes":  ["heeled ankle boots", "strappy heels", "platform boots"],
+    },
+    "vintage": {
+        "outer":  ["trench coat", "denim jacket vintage", "corduroy jacket"],
+        "top":    ["retro graphic tee", "vintage band tee", "fitted polo"],
+        "bottom": ["high waist straight jeans", "flared jeans", "corduroy pants"],
+        "shoes":  ["platform loafers", "chunky loafers", "retro sneakers"],
+    },
+
+    # ── 3-piece (top + bottom + shoes) ──────────────────────────────
+    "y2k": {
+        "top":    ["crop top", "butterfly top", "velour top"],
+        "bottom": ["flare jeans low rise", "mini skirt", "velour pants"],
+        "shoes":  ["platform sneakers", "platform sandals", "chunky shoes"],
+    },
+    "clean girl": {
+        "top":    ["ribbed tank top", "fitted crop top", "fitted cami"],
+        "bottom": ["wide leg trousers", "linen pants wide", "tailored wide pants"],
+        "shoes":  ["white sneakers", "pointed flats", "mule sandals"],
+    },
+    "cottagecore": {
+        "top":    ["floral puff sleeve blouse", "broderie blouse", "smocked top"],
+        "bottom": ["flowy midi skirt", "floral midi skirt", "linen midi skirt"],
+        "shoes":  ["ballet flats", "flat sandals", "lace up boots"],
+    },
+    "athleisure": {
+        "top":    ["sports bra", "cropped hoodie", "performance tank top"],
+        "bottom": ["high waist leggings", "bike shorts", "wide leg joggers"],
+        "shoes":  ["running sneakers", "chunky white sneakers", "slip on sneakers"],
+    },
+    "coquette": {
+        "top":    ["satin bow top", "lace corset top", "ribbon tie blouse"],
+        "bottom": ["mini skirt satin", "pleated mini skirt", "ruffle mini skirt"],
+        "shoes":  ["ballet flats", "mary jane shoes", "kitten heel mules"],
+    },
+    "balletcore": {
+        "top":    ["wrap crop top", "ballet wrap top", "fitted cardigan wrap"],
+        "bottom": ["flowy tulle skirt", "satin midi skirt", "pleated skirt"],
+        "shoes":  ["ballet flats", "ribbon ballet shoes", "satin flats"],
+    },
+    "barbiecore": {
+        "top":    ["pink crop top", "hot pink blouse", "pink fitted tee"],
+        "bottom": ["pink mini skirt", "pink midi skirt", "pink wide leg pants"],
+        "shoes":  ["platform heels pink", "pink mules", "white platform shoes"],
+    },
+    "office siren": {
+        "top":    ["tailored blazer fitted", "structured blazer", "button blazer"],
+        "bottom": ["pencil skirt", "tailored midi skirt", "high waist trousers"],
+        "shoes":  ["pointed toe heels", "kitten heels", "strappy heeled sandals"],
+    },
+    "indie sleaze": {
+        "top":    ["vintage graphic tee", "band t-shirt", "oversized shirt"],
+        "bottom": ["disco pants", "flare pants", "skinny jeans black"],
+        "shoes":  ["ankle boots", "high top converse", "platform boots"],
+    },
+    "boho": {
+        "top":    ["crochet top", "smocked blouse peasant", "fringe top"],
+        "bottom": ["wide leg flowy pants", "maxi skirt", "floral wide leg"],
+        "shoes":  ["platform sandals", "strappy flat sandals", "espadrilles"],
+    },
+    "linen": {
+        "top":    ["linen shirt", "linen button up", "linen crop top"],
+        "bottom": ["linen trousers", "linen wide pants", "linen shorts"],
+        "shoes":  ["leather sandals", "canvas espadrilles", "flat mules"],
+    },
+    "all black": {
+        "top":    ["black oversized hoodie", "black knit sweater", "black long sleeve"],
+        "bottom": ["black wide leg pants", "black straight jeans", "black cargo pants"],
+        "shoes":  ["black boots chelsea", "black chunky sneakers", "black ankle boots"],
+    },
+    "all white": {
+        "top":    ["white fitted top", "white linen shirt", "white ribbed tee"],
+        "bottom": ["white trousers", "white wide leg pants", "white jeans"],
+        "shoes":  ["white sneakers", "white mules", "white sandals"],
+    },
+    "denim": {
+        "top":    ["denim jacket", "denim shirt", "denim vest"],
+        "bottom": ["straight jeans", "wide leg jeans", "flared jeans"],
+        "shoes":  ["white sneakers", "loafers", "ankle boots"],
+    },
+    "oversized": {
+        "top":    ["oversized sweater", "oversized hoodie", "oversized blazer"],
+        "bottom": ["wide leg jeans", "baggy cargo pants", "straight leg trousers"],
+        "shoes":  ["chunky sneakers", "dad sneakers", "platform sneakers"],
+    },
+    "stripes": {
+        "top":    ["striped shirt", "striped button shirt", "striped blouse"],
+        "bottom": ["straight trousers", "wide leg trousers", "straight jeans"],
+        "shoes":  ["loafers", "white sneakers", "ballet flats"],
+    },
+    "velvet": {
+        "top":    ["velvet blazer", "velvet top", "velvet blouse"],
+        "bottom": ["velvet trousers", "velvet skirt", "velvet flare pants"],
+        "shoes":  ["heeled boots", "pointed heels", "strappy sandals"],
+    },
+    "mesh": {
+        "top":    ["mesh top", "sheer blouse", "mesh long sleeve"],
+        "bottom": ["satin skirt", "midi slip skirt", "wide leg satin pants"],
+        "shoes":  ["heeled sandals", "strappy heels", "kitten heel mules"],
+    },
+    "silk": {
+        "top":    ["satin blouse", "silk cami top", "satin slip top"],
+        "bottom": ["satin slip skirt", "silk midi skirt", "satin wide leg pants"],
+        "shoes":  ["strappy heels", "kitten mules", "block heel sandals"],
+    },
+    "baggy": {
+        "top":    ["oversized graphic tee", "baggy hoodie", "printed oversized shirt"],
+        "bottom": ["baggy jeans", "wide leg cargo", "relaxed fit pants"],
+        "shoes":  ["chunky sneakers", "retro sneakers", "high top sneakers"],
+    },
+    "floral": {
+        "top":    ["floral blouse", "floral printed top", "floral shirt"],
+        "bottom": ["straight jeans", "wide leg trousers", "midi skirt plain"],
+        "shoes":  ["white sneakers", "loafers", "flat sandals"],
+    },
+    "gender neutral": {
+        "top":    ["oversized t-shirt", "relaxed fit shirt", "simple crewneck"],
+        "bottom": ["straight leg jeans", "straight chinos", "relaxed trousers"],
+        "shoes":  ["chunky sneakers", "white sneakers", "loafers"],
+    },
+    "high rise": {
+        "top":    ["fitted shirt", "cropped knit top", "fitted tank"],
+        "bottom": ["high rise wide leg jeans", "high waist trousers", "high waist flare"],
+        "shoes":  ["ankle boots", "loafers", "block heel shoes"],
+    },
+    "normcore": {
+        "top":    ["crewneck sweatshirt", "plain t-shirt", "simple polo"],
+        "bottom": ["straight jeans", "chino pants", "relaxed jeans"],
+        "shoes":  ["white sneakers", "canvas sneakers", "clean trainers"],
+    },
+    "casual chic": {
+        "top":    ["linen relaxed shirt", "fitted blouse", "simple knit top"],
+        "bottom": ["straight jeans", "wide leg trousers", "tailored shorts"],
+        "shoes":  ["loafers", "white leather sneakers", "ankle strap sandals"],
+    },
+    "tomato girl": {
+        "top":    ["linen striped top", "red linen blouse", "strappy sun top"],
+        "bottom": ["linen trousers wide", "midi skirt linen", "flowy skirt"],
+        "shoes":  ["strappy sandals flat", "espadrilles", "leather sandals"],
+    },
+    "blokecore": {
+        "top":    ["soccer jersey", "football shirt", "sports jersey"],
+        "bottom": ["track shorts", "athletic shorts", "joggers"],
+        "shoes":  ["trainers", "retro sneakers", "football trainers"],
+    },
+    "coastal grandmother": {
+        "top":    ["linen button shirt", "striped linen blouse", "relaxed knit top"],
+        "bottom": ["linen wide trousers", "linen wide pants", "linen skirt midi"],
+        "shoes":  ["espadrilles", "leather flat sandals", "loafers"],
+    },
+    "maximalist": {
+        "top":    ["printed blouse bold", "colorful oversized shirt", "patterned top"],
+        "bottom": ["wide leg printed pants", "bold pattern skirt", "colorful trousers"],
+        "shoes":  ["heeled mules", "platform sandals", "embellished flats"],
+    },
+    "earth tones": {
+        "top":    ["brown oversized shirt", "rust knit sweater", "camel top"],
+        "bottom": ["camel trousers", "olive cargo pants", "brown wide pants"],
+        "shoes":  ["chunky boots brown", "tan ankle boots", "camel loafers"],
+    },
+    "neon": {
+        "top":    ["printed oversized tee bright", "neon color top", "color block shirt"],
+        "bottom": ["black jeans slim", "black wide pants", "black shorts"],
+        "shoes":  ["white chunky sneakers", "neon sneakers", "colorful trainers"],
+    },
 }
 
 
-def get_searches(style):
-    if style in STYLE_MAP:
-        return STYLE_MAP[style]
-    return {"top": f"{style} top", "bottom": f"{style} pants", "shoes": f"{style} shoes"}
+# ─────────────────────────────────────────────────────
+#  FETCH CANDIDATES WITH MULTIPLE QUERIES
+# ─────────────────────────────────────────────────────
+
+def fetch_slot_candidates(queries, gender_suffix, n_per_query=8):
+    """
+    Run multiple search queries for one slot, combine results,
+    deduplicate by name, attach slot label.
+    """
+    seen_names = set()
+    all_products = []
+    for q in queries:
+        full_query = f"{q} {gender_suffix}"
+        products = search_hm(full_query, n=n_per_query)
+        for p in products:
+            name_key = p.get("name", "").lower().strip()
+            if name_key and name_key not in seen_names:
+                seen_names.add(name_key)
+                all_products.append(p)
+    return all_products
 
 
 # ─────────────────────────────────────────────────────
@@ -314,70 +499,51 @@ def get_searches(style):
 # ─────────────────────────────────────────────────────
 
 def main():
-    if SCRAPERAPI_KEY == "PUT_YOUR_KEY_HERE":
-        print("ERROR: Set your ScraperAPI key first!")
-        print("  Windows CMD:   set SCRAPERAPI_KEY=xxxx")
-        print("  PowerShell:    $env:SCRAPERAPI_KEY='xxxx'")
-        return
-
     print("=" * 65)
-    print("OUTFIT GENERATOR — PRODUCT FETCHER  (ASOS + H&M + Zara)")
-    print("Using: ScraperAPI")
+    print("OUTFIT GENERATOR — PRODUCT FETCHER  (RapidAPI H&M)")
     print("=" * 65)
-
-    # Load trending styles
-    try:
-        with open("trending_styles.json") as f:
-            trending = json.load(f)
-        top_styles = [s["style"] for s in trending.get("trending_styles", [])[:TOP_STYLES]]
-        print(f"\nTrending: {', '.join(top_styles)}\n")
-    except FileNotFoundError:
-        print("trending_styles.json not found — using built-in style list")
-        top_styles = list(STYLE_MAP.keys())[:TOP_STYLES]
 
     fits = []
+    item_order = ["outer", "top", "bottom", "shoes"]
+    required_slots = ["top", "bottom", "shoes"]
 
-    for style in top_styles:
-        searches = get_searches(style)
-        auto     = style not in STYLE_MAP
-        gender   = random.choice(GENDERS)
-        print(f"\n-- {style.upper()} [{gender}] {'[auto]' if auto else ''}")
+    for style, slot_queries in STYLE_MAP.items():
+        for gender in ["men", "women"]:
+            gender_suffix = "men" if gender == "men" else "women"
+            print(f"\n{'─'*55}")
+            print(f"  {style.upper()} [{gender}]")
 
-        fit_items = {}
-        for slot in ["top", "bottom", "shoes"]:
-            query = searches[slot]
-            print(f"  {slot}: '{query}'")
-
-            for store in STORES:
-                print(f"    [{store['name']}]...", end=" ", flush=True)
-                # Pass gender to ASOS; H&M/Zara use the query as-is
-                if store["name"] == "ASOS":
-                    products = store["fn"](query, gender=gender)
-                else:
-                    products = store["fn"](query)
+            candidates = {}
+            for slot, queries in slot_queries.items():
+                if isinstance(queries, str):
+                    queries = [queries]
+                n_per = max(4, CANDIDATES // len(queries))
+                print(f"    {slot}: {queries[0]}...", end=" ", flush=True)
+                products = fetch_slot_candidates(queries, gender_suffix, n_per_query=n_per)
                 if products:
-                    p = products[0]
-                    p["slot"]       = slot
-                    p["store"]      = store["name"]
-                    p["storeColor"] = store["color"]
-                    fit_items[slot] = p
-                    print(f"got: {p['name'][:40]}")
-                    break
+                    for p in products:
+                        p["slot"] = slot
+                    candidates[slot] = products
+                    print(f"{len(products)} unique items")
                 else:
                     print("no results")
 
-            if slot not in fit_items:
-                print(f"    nothing found for {slot}")
+            if not all(candidates.get(s) for s in required_slots):
+                print(f"    ✗ skipped — missing slot")
+                continue
 
-        if len(fit_items) >= 2:
-            fits.append({
-                "style": style,
-                "gender": gender,
-                "items": [fit_items.get("top"), fit_items.get("bottom"), fit_items.get("shoes")],
-            })
-            print(f"  Fit built ({len(fit_items)}/3 items)")
-        else:
-            print(f"  Not enough items — skipping")
+            combos = build_diverse_combos(candidates, n=FITS_PER_COMBO)
+            print(f"    → {len(combos)} fits built")
+            for idx, (score, combo) in enumerate(combos):
+                items = [combo[s] for s in item_order if s in combo]
+                names = " + ".join(i["name"][:22] for i in items)
+                print(f"      fit {idx+1}: score={score:.2f}  {names}")
+                fits.append({
+                    "style":      style,
+                    "gender":     gender,
+                    "colorScore": round(score, 2),
+                    "items":      items,
+                })
 
     output = {
         "generated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -390,8 +556,7 @@ def main():
         f.write("window.OUTFIT_PRODUCTS = " + json.dumps(output) + ";\n")
 
     print("\n" + "=" * 65)
-    print(f"Built {len(fits)} fits")
-    print(f"Saved products_data.json + products_data.js")
+    print(f"  Done — {len(fits)} fits saved to products_data.js")
     print("=" * 65)
 
 
